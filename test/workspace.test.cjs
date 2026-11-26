@@ -44,3 +44,46 @@ test('exports a base-relative patch without changing the worktree or including a
  assert.equal(r.untracked,1);
  assert.equal(await fs.readFile(p.join(w.dir,'资料.txt'),'utf8'),'tracked output\n');
 });
+
+test('review and export hide only attachment staging in each workspace, without configuring Git',async t=>{
+ const {source,storage,file}=await fixture(t);
+ const isolated=await worktree(source,'review-scope',storage);
+ for(const [cwd,base] of [[source,undefined],[isolated.dir,isolated.base]]){
+  await fs.mkdir(p.join(cwd,'.orbit-attachments'),{recursive:true});
+  await fs.mkdir(p.join(cwd,'nested','.orbit-attachments'),{recursive:true});
+  await fs.writeFile(p.join(cwd,'.orbit-attachments','orbite-copy.txt'),'generated attachment');
+  await fs.writeFile(p.join(cwd,'nested','.orbit-attachments','project-owned.txt'),'project content');
+  await fs.writeFile(p.join(cwd,'new-project.txt'),'an ordinary untracked file');
+  await fs.writeFile(p.join(cwd,p.basename(file)),'edited project file\n');
+  await git(cwd,['add','-f','.orbit-attachments/orbite-copy.txt','nested/.orbit-attachments/project-owned.txt']);
+  if(base)await git(cwd,['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','stage fixture']);
+  await fs.writeFile(p.join(cwd,'.orbit-attachments','private-untracked.txt'),'another generated copy');
+  const before=await git(cwd,['status','--short','--untracked-files=all']);
+  assert.match(before,/private-untracked/);
+  const result=await review(cwd,base);
+  assert.doesNotMatch(result.status,/orbite-copy|private-untracked/);
+  assert.doesNotMatch(result.patch,/generated attachment/);
+  assert.match(result.status,/new-project\.txt/);
+  assert.match(result.status,/nested\/\.orbit-attachments\/project-owned\.txt/);
+  assert.match(result.patch,/edited project file/);
+  assert.match(result.patch,/project content/);
+  if(base){
+   const exported=await exportPatch(cwd,base);
+   assert.equal(exported.untracked,1);
+   assert.doesNotMatch(exported.patch,/generated attachment/);
+   assert.match(exported.patch,/project content/);
+  }
+  assert.equal(await git(cwd,['status','--short','--untracked-files=all']),before);
+ }
+});
+
+test('review from a repository subfolder excludes only its own generated attachment directory',async t=>{
+ const {source,file}=await fixture(t);
+ const project=p.join(source,'subproject');await fs.mkdir(p.join(project,'.orbit-attachments'),{recursive:true});
+ await fs.writeFile(p.join(project,'.orbit-attachments','orbite-copy.txt'),'generated attachment');
+ await git(source,['add','-f','subproject/.orbit-attachments/orbite-copy.txt']);
+ await fs.writeFile(file,'sibling edit\n');
+ const {status,patch}=await review(project);
+ assert.doesNotMatch(status,/\.orbit-attachments/);assert.doesNotMatch(patch,/generated attachment/);
+ assert.match(status,/资料\.txt/);assert.match(patch,/sibling edit/);
+});
