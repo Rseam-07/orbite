@@ -1,6 +1,24 @@
-# Orbit
+# <img src="assets/orbit-logo.svg" alt="" width="48" height="48" align="center"> Orbit
 
-一个面向 macOS 的独立 Antigravity 客户端。**只连接 Google Antigravity**。不需要 OpenAI、Codex CLI 或 ChatGPT 账号。Codex 和 Claude Code 仅用于界面与交互参考。这是 Electron 源码开发版，不是签名安装包。Orbit 意为「轨道」：保留 Antigravity 的太空意象，也指围绕项目运转的工作台。Orbit 不是 Google 官方产品。
+**拯救反重力，让它像 Codex 一样好用。**
+
+Antigravity 能干活，坐在它前面的人不该跟着费劲。拖一个文件夹进去、同时跑两条任务、看一眼它到底改了什么，这些事本来就该顺手。Orbit 是为此做的独立 macOS 客户端。
+
+拿 Codex 当好用的标杆，借一点 Claude Code 的操作记录和 Metro 的转场。账号、模型和执行仍然走 Google Antigravity；不用 OpenAI 或 Anthropic 账号，也不解锁 Codex 权益。Orbit 不是 Google 官方产品。
+
+## 现在能做什么
+
+- **文件直接拖进去。** 从 Finder 拖文件或文件夹，也可以点「＋」选取。发之前能看到加了什么，原件不动。
+- **任务分开跑。** 在不同项目间来回切，或用独立 Git 工作树隔离改动。想给运行中的任务补一句话，不用先停掉它。
+- **改了什么，一眼能查。** 对话里可展开工具操作，审阅面板逐文件看 Git diff；需要时可以导出已跟踪改动的补丁。
+
+## 想一起把什么做顺
+
+1. **Computer Use**：把权限提示、驱动自测、真实 Antigravity 会话联调跑通。目前是可选的 Cua Driver 接入，还没有完成实机验收。
+2. **Mac 安装包**：现在是 Electron 源码开发版。下一步是把安装、启动和升级做成普通 Mac 用户也能走通的流程。
+3. **工作树与审阅**：让改动更好拿回来，补安全合并、行级审阅和更完整的附件体验。
+
+遇到卡手的地方，欢迎[开 Issue](https://github.com/Rseam-07/orbit-antigravity/issues)说说你在做什么、卡在哪一步。想直接改代码，看[贡献指南](CONTRIBUTING.md)；想挑功能，看[与 Codex 的逐项对照](对照与后续.md)。
 
 ## 先试界面
 
