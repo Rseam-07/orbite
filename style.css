@@ -177,6 +177,7 @@ textarea::placeholder { color:var(--dim) }
 #attachChoices { left:-2px; bottom:32px; width:152px }
 #commands { bottom:calc(100% + 6px); left:0; width:min(100%,360px) }
 #attachChoices button,#commands button { display:flex; align-items:center; gap:5px; width:100%; text-align:left; border-radius:4px; padding:6px; font-size:11px }
+#commands [aria-selected="true"] { background:var(--selected); box-shadow:inset 2px 0 var(--accent) }
 #attachChoices svg { width:14px; height:14px; color:var(--muted) }
 #commands code { font:10.5px var(--mono) }
 #commands span { color:var(--muted); font-size:10px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap }
