@@ -134,7 +134,7 @@ ipc('export-patch',async(task,root)=>{
  if(busy(runners.get(task)))throw new Error('请等这条会话结束，再导出。');
  const result=await exportPatch(scope.dir,scope.base);
  if(!result.patch)return {empty:true,untracked:result.untracked};
- const pick=await dialog.showSaveDialog(win,{title:'导出工作树补丁',defaultPath:'Orbit-'+task.slice(0,8)+'.patch',filters:[{name:'Git patch',extensions:['patch']}]});
+ const pick=await dialog.showSaveDialog(win,{title:'导出工作树补丁',defaultPath:'Orbite-'+task.slice(0,8)+'.patch',filters:[{name:'Git patch',extensions:['patch']}]});
  if(pick.canceled||!pick.filePath)return {canceled:true};
  await fs.promises.writeFile(pick.filePath,result.patch,{mode:0o600});
  return {ok:true,file:path.basename(pick.filePath),untracked:result.untracked};
@@ -145,10 +145,16 @@ ipc('diff',async(task,root,isolated)=>{
  if(!scope||scope.root!==root)throw new Error('工作树尚未准备');
  return review(scope.dir,scope.base);
 });
+// Keep the same profile across the Orbit → Orbite rename.
+const profileDir=path.join(app.getPath('appData'),'orbit-antigravity');
+fs.mkdirSync(profileDir,{recursive:true,mode:0o700});
+app.setPath('userData',profileDir);
+app.setPath('sessionData',profileDir);
+app.setName('Orbite');
 if(!app.requestSingleInstanceLock())app.quit();else{
  app.on('second-instance',()=>{win?.show();win?.focus()});
  app.whenReady().then(()=>{
-  win=new BrowserWindow({width:1320,height:850,minWidth:770,minHeight:540,backgroundColor:nativeTheme.shouldUseDarkColors?'#191a1c':'#ffffff',title:'Orbit',
+  win=new BrowserWindow({width:1320,height:850,minWidth:770,minHeight:540,backgroundColor:nativeTheme.shouldUseDarkColors?'#191a1c':'#ffffff',title:'Orbite',
    ...(process.platform==='darwin'?{titleBarStyle:'hiddenInset',trafficLightPosition:{x:16,y:20}}:{}),
    webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));

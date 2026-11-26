@@ -5,7 +5,7 @@ const os=require('node:os');
 const p=require('node:path');
 const {git,worktree,review,exportPatch}=require('../workspace.cjs');
 async function fixture(t){
- const dir=await fs.mkdtemp(p.join(os.tmpdir(),'orbit-test-'));t.after(()=>fs.rm(dir,{force:true,recursive:true}));
+ const dir=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbit-test-'));t.after(()=>fs.rm(dir,{force:true,recursive:true}));
  const source=p.join(dir,'repo'),storage=p.join(dir,'worktrees');await fs.mkdir(source);await fs.mkdir(storage);
  const file=p.join(source,'资料.txt');
  await git(source,['init','-q']);await fs.writeFile(file,'baseline\n');await git(source,['add','.']);

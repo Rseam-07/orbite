@@ -3,6 +3,7 @@ dist/
 out/
 coverage/
 Orbit-Preview.html
+Orbite-Preview.html
 .DS_Store
 .env
 .env.*

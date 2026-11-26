@@ -139,7 +139,7 @@ function renderSidebar(){
   root.append(group);
  }
  if(!groups.length)root.append(el('div',q?'没有匹配的会话':'尚未打开项目','project-empty'));
- $('projectName').textContent=view==='home'?'Orbit':basename(folder)||'Orbit';
+ $('projectName').textContent=view==='home'?'Orbite':basename(folder)||'Orbite';
  $('taskTitle').textContent=view==='home'?'工作台':current?.title||'新建会话';
  $('routeProject').textContent=basename(folder)||'会话';
  $('routeTitle').textContent=current?.title||'新建会话';
@@ -557,7 +557,7 @@ $('useDriver').onchange=async()=>{
  const id=key(),s=runtime(id),enabled=$('useDriver').checked;
  try{if(api&&s.session)await api.disconnect(id)}catch(e){notice(e);renderCua();return}
  s.extensionEnabled=enabled;s.session=null;s.authState=null;s.options=[];
- if(key()===id){renderOptions();renderCua();$('extNote').textContent=enabled?'将在该会话下一次连接时加载。再用下面的联调提示检查 Antigravity 能否看到它。':'下一次连接不再由 Orbit 加载，CLI 全局设置不变。'}
+ if(key()===id){renderOptions();renderCua();$('extNote').textContent=enabled?'将在该会话下一次连接时加载。再用下面的联调提示检查 Antigravity 能否看到它。':'下一次连接不再由 Orbite 加载，CLI 全局设置不变。'}
 };
 $('cuaDraft').onclick=async()=>{
  if(!runtime().extensionEnabled)return;
@@ -588,4 +588,4 @@ document.addEventListener('keydown',e=>{
 });
 if(innerWidth<=640)sidebar(false);
 viewLayout('home');render();scanProject();renderActivity();setStatus();
-if(!demo&&!api)notice('桌面桥接未启动，请重启 Orbit。');
+if(!demo&&!api)notice('桌面桥接未启动，请重启 Orbite。');

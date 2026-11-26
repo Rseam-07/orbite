@@ -1,4 +1,4 @@
-<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'"><title>Orbit</title><link rel="stylesheet" href="style.css"><script defer src="motion.js"></script><script defer src="ui.js"></script></head><body>
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'"><title>Orbite</title><link rel="stylesheet" href="style.css"><script defer src="motion.js"></script><script defer src="ui.js"></script></head><body>
 <svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" viewBox="0 0 20 20">
 <symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
 <symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/></symbol>
@@ -19,7 +19,7 @@
 <symbol id="i-close" viewBox="0 0 20 20"><path d="m6 6 8 8m0-8-8 8"/></symbol>
 </svg>
 <div id="app" class="app">
-<aside id="sidebar"><div class="side-head"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="side-brand">Orbit</span><button class="icon" id="collapse" title="隐藏侧栏" aria-label="隐藏侧栏"><svg><use href="#i-sidebar"/></svg></button></div>
+<aside id="sidebar"><div class="side-head"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="side-brand">Orbite</span><button class="icon" id="collapse" title="隐藏侧栏" aria-label="隐藏侧栏"><svg><use href="#i-sidebar"/></svg></button></div>
 <div class="top-links"><button id="showHub" class="nav"><svg><use href="#i-extension"/></svg>工作台<kbd>⌘ 1</kbd></button><button id="new" class="nav"><svg><use href="#i-edit"/></svg>新建会话<kbd>⌘ N</kbd></button><button id="searchBtn" class="nav"><svg><use href="#i-find"/></svg>搜索会话<kbd>⌘ K</kbd></button></div>
 <div id="searchWrap" hidden><input id="search" type="search" aria-label="搜索项目和会话" placeholder="搜索项目和会话"></div>
 <div class="project-label"><span>项目</span><button class="icon" id="folder" title="打开项目" aria-label="打开项目"><svg><use href="#i-plus"/></svg></button></div>
@@ -27,7 +27,7 @@
 <div class="sidebar-bottom"><button id="extensions" class="nav"><svg><use href="#i-extension"/></svg>扩展</button><button id="setup" class="nav"><svg><use href="#i-settings"/></svg>设置 <span id="sideStatus"></span></button></div></aside>
 <main id="workspace">
 <header class="toolbar"><button id="expand" class="icon" title="显示侧栏" aria-label="显示侧栏" hidden><svg><use href="#i-sidebar"/></svg></button>
-<div class="breadcrumbs"><span id="projectName">Orbit</span><svg><use href="#i-chevron"/></svg><strong id="taskTitle">工作台</strong></div><span class="toolbar-rule"></span><span id="toolbarEngine">Antigravity</span>
+<div class="breadcrumbs"><span id="projectName">Orbite</span><svg><use href="#i-chevron"/></svg><strong id="taskTitle">工作台</strong></div><span class="toolbar-rule"></span><span id="toolbarEngine">Antigravity</span>
 <span class="grow"></span><span id="demoFlag" hidden>离线预览</span><button id="openDiff" class="toolbar-button" aria-expanded="false"><svg><use href="#i-pane"/></svg><span>审阅</span><span id="diffCount" hidden></span></button></header>
 <div id="scene" data-view="home"><section id="hub" aria-label="工作台">
 <div class="hub-inner"><header class="hub-head"><h1 id="hubTitle" tabindex="-1">工作台</h1><button id="hubOpen" class="secondary"><svg><use href="#i-plus"/></svg>打开项目</button></header>

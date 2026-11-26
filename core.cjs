@@ -10,12 +10,12 @@ class Engine {
   this.rpc=new RPC(exe,args??['acp','--sandbox'],cwd,m=>this.message(m),(reason,code)=>{this.clearStop();this.active=false;this.promptOnWire=false;this.approvals.clear();emit({type:'offline',text:reason,code})});
  }
  async init(){
-  this.info=await this.rpc.call('initialize',{protocolVersion:1,clientCapabilities:{},clientInfo:{name:'orbit-antigravity',title:'Orbit for Antigravity',version:'0.7.0'}});
+  this.info=await this.rpc.call('initialize',{protocolVersion:1,clientCapabilities:{},clientInfo:{name:'orbite',title:'Orbite for Antigravity',version:'0.7.0'}});
   return this.info;
  }
  get canAuthenticate(){return this.info?.authMethods?.some(m=>m.id==='oauth-personal'&&m.type!=='terminal')??false}
  async auth(){
-  if(!this.canAuthenticate)throw new Error('请在终端运行 agy 完成 Google 登录，再回到 Orbit。');
+  if(!this.canAuthenticate)throw new Error('请在终端运行 agy 完成 Google 登录，再回到 Orbite。');
   return this.rpc.call('authenticate',{methodId:'oauth-personal'},300000);
  }
  async open(id,mcpServers=[]){

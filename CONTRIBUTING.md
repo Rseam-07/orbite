@@ -1,4 +1,4 @@
-# 参与 Orbit 开发
+# 参与 Orbite 开发
 
 1. 克隆仓库，在项目根目录运行 `npm ci`，用 `npm start` 启动桌面版。
 2. 从 `main` 创建主题分支；一次 Pull Request 聚焦一个改动。
