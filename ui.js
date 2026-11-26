@@ -435,6 +435,7 @@ async function send(){
  let s=runtime();if(s.connecting||draft().pasting)return;
  if(s.running){await steer();return}
  const d=draft(),original=d.text,files=d.files.slice();
+ if(files.length>16){notice('每条消息最多发送 16 个附件。请先移除多余附件。');return}
  const text=original.trim()||(files.length?'请查看这些附件。':'');if(!text)return;
  if(!await connect()||draft()!==d)return;
  // Connection may wait for a folder picker, worktree or CLI. Only send the draft the user confirmed.
@@ -458,7 +459,7 @@ async function send(){
   if(disconnected){user.status='连接中断 · 未确认执行结果';s.error=(s.error||plain(e.message))+' 没有自动重发。重试之前请检查审阅面板。';}
   else {
    if(t.messages.at(-1)===user)t.messages.pop();
-   if(!local.text)local.text=text;local.files.unshift(...files);s.error=plain(e.message);
+   if(!local.text)local.text=original;local.files.unshift(...files);s.error=plain(e.message);
   }
   finish(id,disconnected?'disconnected':'failed');if(key()===id)render();
  }
