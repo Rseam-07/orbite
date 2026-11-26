@@ -20,13 +20,20 @@ class Engine {
  }
  async open(id,mcpServers=[]){
   const params={cwd:this.cwd,mcpServers};
-  if(id&&!this.info?.agentCapabilities?.loadSession)throw new Error('当前 agy 版本不支持恢复会话。请新建任务，原历史仍会保留。');
+  const caps=this.info?.agentCapabilities,resume=caps?.sessionCapabilities?.resume;
+  // Orbite already stores the transcript for this ID. ACP advertises resume as an object.
+  const canResume=resume&&typeof resume==='object'&&!Array.isArray(resume);
+  if(id&&!canResume&&!caps?.loadSession)throw new Error('当前 agy 版本不支持恢复会话。请新建任务，原历史仍会保留。');
+  const method=id?(canResume?'session/resume':'session/load'):'session/new';
+  // Do not retry as a different session on failure: surface the original error for auth/reconnect.
   this.opening=[];
-  const r=await this.rpc.call(id?'session/load':'session/new',id?{...params,sessionId:id}:params);
-  this.session=id??r.sessionId;if(!this.session)throw new Error('Antigravity 未返回会话 ID');
-  this.setConfig(r.configOptions);
-  const buffered=this.opening;this.opening=null;for(const m of buffered)this.message(m);
-  return this.session;
+  try{
+   const r=await this.rpc.call(method,id?{...params,sessionId:id}:params);
+   const session=id??r?.sessionId;if(!session)throw new Error('Antigravity 未返回会话 ID');
+   this.session=session;this.setConfig(r?.configOptions);
+   for(const m of this.opening)this.message(m);
+   return session;
+  }finally{this.opening=null}
  }
  setConfig(options){
   this.config=(Array.isArray(options)?options:[]).filter(c=>c?.type==='select'&&['model','thought_level','mode'].includes(c.category)&&typeof c.id==='string').map(c=>({
