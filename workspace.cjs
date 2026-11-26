@@ -14,8 +14,6 @@ async function worktree(root,task,storage){
  if(await fs.realpath(top)!==root)throw new Error('请先打开 Git 仓库根目录再创建工作树。');
  const baseRepo=(await git(root,['rev-parse','--path-format=absolute','--git-common-dir'])).trim();
  const common=await fs.realpath(baseRepo);
- const head=(await git(root,['rev-parse','--verify','HEAD'])).trim();
- if(!validCommit(head))throw new Error('项目需要至少有一个提交才能创建工作树');
  const action=async()=>{try{await fs.mkdir(space,{mode:0o700});return true}catch(e){if(e.code==='EEXIST')return false;throw e}};
  if(!await action()){
   if(await fs.realpath(space)!==space)throw new Error('工作树目录无效');
@@ -27,7 +25,13 @@ async function worktree(root,task,storage){
   return {dir,base:meta.base,isolated:true};
  }
  // No checkout hooks, force, automatic commit, push or merge.
- try{await git(root,['worktree','add','-b','orbit/'+task,dir,head],90000)}catch(e){await fs.rmdir(space).catch(()=>{});throw e}
+ let head;
+ try{
+  // Only new tasks need the source branch to have a commit. Existing tasks use their saved base.
+  head=(await git(root,['rev-parse','--verify','HEAD^{commit}']).catch(e=>{throw new Error('当前分支需要至少有一个提交才能创建工作树',{cause:e})})).trim();
+  if(!validCommit(head))throw new Error('无法识别工作树的起始提交');
+  await git(root,['worktree','add','-b','orbit/'+task,dir,head],90000);
+ }catch(e){await fs.rmdir(space).catch(()=>{});throw e}
  await fs.writeFile(manifest,JSON.stringify({common,base:head}),{mode:0o600,flag:'wx'});
  return {dir,base:head,isolated:true};
 }

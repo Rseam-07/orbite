@@ -26,6 +26,20 @@ test('two real Git worktrees preserve source changes and each has its own diff',
  assert.equal(await fs.readFile(file,'utf8'),'user local edit\n');
  assert.deepEqual(await worktree(source,'task-one',storage),a);
 });
+test('reopens an existing task when the source branch has no commit yet',async t=>{
+ const {source,storage}=await fixture(t);
+ const task=await worktree(source,'existing-task',storage);
+ const edited=p.join(task.dir,'资料.txt');
+ await fs.writeFile(edited,'in-progress task edit\n');
+ // Point only the disposable source fixture at a new branch, without touching its files.
+ await git(source,['symbolic-ref','HEAD','refs/heads/new-unborn-branch']);
+ await assert.rejects(git(source,['rev-parse','--verify','HEAD']));
+ assert.deepEqual(await worktree(source,'existing-task',storage),task);
+ assert.equal(await fs.readFile(edited,'utf8'),'in-progress task edit\n');
+ assert.match((await review(task.dir,task.base)).patch,/in-progress task edit/);
+ await assert.rejects(worktree(source,'new-task',storage),/至少有一个提交/);
+ assert.deepEqual(await fs.readdir(storage),['existing-task']);
+});
 test('reject invalid IDs and repository subdirectories',async t=>{
  const {source,storage}=await fixture(t);await fs.mkdir(p.join(source,'sub'));
  await assert.rejects(worktree(source,'../escape',storage),/无效/);
