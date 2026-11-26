@@ -1,6 +1,8 @@
 const fs=require('node:fs/promises');
 const {constants}=require('node:fs');
 const path=require('node:path');
+const os=require('node:os');
+const {randomUUID}=require('node:crypto');
 const MAX_BYTES=64*1024*1024,MAX_ENTRIES=1000;
 const MAX_CLIPBOARD_IMAGE=16*1024*1024;
 const PNG=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
@@ -20,6 +22,23 @@ async function describe(p){
  const name=path.basename(p);if(!name||blocked(name))throw new Error('不支持作为附件：'+name);
  const stat=await fs.lstat(p);if(stat.isSymbolicLink()||!stat.isDirectory()&&!stat.isFile())throw new Error('不支持符号链接或设备文件：'+name);
  return {name,kind:stat.isDirectory()?'folder':'file',size:stat.isFile()?stat.size:null};
+}
+async function registerPaths(files,registry){
+ const pending=[];
+ for(const file of files.slice(0,16)){
+  if(typeof file!=='string'||!path.isAbsolute(file))continue;
+  try{
+   const real=await fs.realpath(file);
+   if([path.parse(real).root,os.homedir()].includes(real))throw new Error('不能添加整个磁盘或主目录。');
+   pending.push({file,details:await describe(file)});
+  }catch(e){
+   if(['ENOENT','ENOTDIR'].includes(e.code))throw new Error('找不到「'+path.basename(file)+'」。本次未添加附件，请重新选择。');
+   if(['EACCES','EPERM','ELOOP'].includes(e.code))throw new Error('无法读取「'+path.basename(file)+'」。本次未添加附件，请重新选择。');
+   throw e;
+  }
+ }
+ // Register only after the whole selection is validated; rejected batches never leave hidden IDs.
+ return pending.map(({file,details})=>{const id=randomUUID();registry.set(id,file);return {...details,id}});
 }
 async function stage(root,paths){
  if(!paths.length)return [];
@@ -70,4 +89,4 @@ async function stage(root,paths){
   return result;
  }catch(e){await fs.rm(batch,{recursive:true,force:true});throw e}
 }
-module.exports={describe,stage,clipboardImage};
+module.exports={describe,stage,clipboardImage,registerPaths};

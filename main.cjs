@@ -2,7 +2,7 @@ const {app,BrowserWindow,ipcMain,dialog,nativeTheme,shell}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {worktree,review,validId,exportPatch}=require('./workspace.cjs');
 const cua=require('./computer-use.cjs');
 const {Engine}=require('./core.cjs');
-const {describe,stage,clipboardImage}=require('./attachments.cjs');
+const {registerPaths,stage,clipboardImage}=require('./attachments.cjs');
 const {randomUUID}=require('node:crypto');
 const attachments=new Map();
 let draftImageBytes=0;
@@ -90,19 +90,10 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
 });
 ipc('authenticate',async task=>{const r=get(task);r.connecting=true;try{await r.auth();if(r!==runners.get(task))throw new Error('连接已切换');return {session:await r.open(r.requestedSession,r.extensions)}}finally{r.connecting=false}});
 ipc('configure',(task,id,value)=>get(task).configure(id,value));
-async function rememberAttachments(files){
- const output=[];
- for(const p of files.slice(0,16)){
-  if(typeof p!=='string'||!path.isAbsolute(p))continue;
-  const real=await fs.promises.realpath(p);if([path.parse(real).root,os.homedir()].includes(real))throw new Error('不能添加整个磁盘或主目录。');
-  const d=await describe(p);const id=randomUUID();attachments.set(id,p);output.push({...d,id});
- }
- return output;
-}
 ipc('attach',(kind)=>{if(!['file','folder'].includes(kind))throw new Error('未知附件类型');
- return dialog.showOpenDialog(win,{title:'添加到下一条消息',properties:[kind==='file'?'openFile':'openDirectory','multiSelections']}).then(a=>a.canceled?[]:rememberAttachments(a.filePaths));
+ return dialog.showOpenDialog(win,{title:'添加到下一条消息',properties:[kind==='file'?'openFile':'openDirectory','multiSelections']}).then(a=>a.canceled?[]:registerPaths(a.filePaths,attachments));
 });
-ipc('drop',files=>{if(!Array.isArray(files))throw new Error('无效拖拽内容');return rememberAttachments(files)});
+ipc('drop',files=>{if(!Array.isArray(files))throw new Error('无效拖拽内容');return registerPaths(files,attachments)});
 ipc('paste-image',(mime,bytes)=>{
  const image=clipboardImage(mime,bytes);
  if(draftImageBytes+image.size>64*1024*1024)throw new Error('草稿图片已达 64 MiB。请先发送或移除一些图片。');
