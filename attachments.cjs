@@ -40,7 +40,8 @@ async function registerPaths(files,registry){
  // Register only after the whole selection is validated; rejected batches never leave hidden IDs.
  return pending.map(({file,details})=>{const id=randomUUID();registry.set(id,file);return {...details,id}});
 }
-async function stage(root,paths){
+async function stage(root,paths,{signal}={}){
+ signal?.throwIfAborted();
  if(!paths.length)return [];
  const base=path.join(root,'.orbit-attachments');
  await fs.mkdir(base,{mode:0o700}).catch(e=>{if(e.code!=='EEXIST')throw e});
@@ -49,6 +50,7 @@ async function stage(root,paths){
  try{
   const result=[];
   async function clone(from,to,skipped,depth=0){
+   signal?.throwIfAborted();
    if(++entries>MAX_ENTRIES||depth>32)throw new Error('附件超过 1,000 个条目或目录嵌套过深。');
    const stat=await fs.lstat(from);
    if(stat.isSymbolicLink()||!stat.isDirectory()&&!stat.isFile()){skipped.push(path.basename(from));return}
@@ -67,26 +69,30 @@ async function stage(root,paths){
      const now=await file.stat();if(!now.isFile()||now.size>remaining)throw new Error('附件大小发生变化或不是普通文件。');
      const buffer=Buffer.alloc(now.size+1);let bytesRead=0;
      while(bytesRead<buffer.length){
+      signal?.throwIfAborted();
       const chunk=await file.read(buffer,bytesRead,buffer.length-bytesRead,bytesRead);
       if(!chunk.bytesRead)break;bytesRead+=chunk.bytesRead;
      }
      const after=await file.stat();
      if(bytesRead!==now.size||after.mtimeMs!==now.mtimeMs||after.size!==now.size)throw new Error('附件在读取时发生变化，请重新添加。');
-     bytes+=bytesRead;await fs.writeFile(to,buffer.subarray(0,bytesRead),{flag:'wx',mode:0o600});
+     signal?.throwIfAborted();
+     bytes+=bytesRead;await fs.writeFile(to,buffer.subarray(0,bytesRead),{flag:'wx',mode:0o600,signal});
     }finally{await file.close()}
    }
   }
   for(const [i,from] of paths.entries()){
+   signal?.throwIfAborted();
    const image=typeof from!=='string',d=image?{name:from.name,kind:from.kind,size:from.size,clipboard:true}:await describe(from);
    const parent=path.join(batch,String(i+1));await fs.mkdir(parent,{mode:0o700});
    const destination=path.join(parent,d.name),skipped=[];
    if(image){
     if(++entries>MAX_ENTRIES||from.bytes.length>MAX_BYTES-bytes)throw new Error('附件总大小或条目超过限制。');
-    await fs.writeFile(destination,from.bytes,{flag:'wx',mode:0o600});bytes+=from.bytes.length;
+    await fs.writeFile(destination,from.bytes,{flag:'wx',mode:0o600,signal});bytes+=from.bytes.length;
    }else await clone(await fs.realpath(from),destination,skipped);
    result.push({...d,path:destination,relative:path.relative(root,destination),skipped});
   }
+  signal?.throwIfAborted();
   return result;
- }catch(e){await fs.rm(batch,{recursive:true,force:true});throw e}
+ }catch(e){await fs.rm(batch,{recursive:true,force:true});throw signal?.aborted?signal.reason:e}
 }
 module.exports={describe,stage,clipboardImage,registerPaths};

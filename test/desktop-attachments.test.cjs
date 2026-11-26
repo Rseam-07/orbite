@@ -3,8 +3,8 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises'),os=require('node:os'),path=require('node:path');
 const {createRequire}=require('node:module'),{runInNewContext}=require('node:vm');
 
-// Run the actual preload and main attachment handlers with only Electron's shell mocked.
-async function desktop(t){
+// Run the actual preload and main attachment handlers with Electron's shell mocked.
+async function desktop(t,{Engine}={}){
  const tmp=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'orbite-ipc-'));
  t.after(()=>fs.rm(tmp,{recursive:true,force:true}));
  const handlers=new Map(),listeners=new Map(),calls=[];
@@ -22,7 +22,7 @@ async function desktop(t){
  async function load(file){
   const filename=path.join(__dirname,'..',file),req=createRequire(filename);
   runInNewContext(await fs.readFile(filename,'utf8'),{
-   require:name=>name==='electron'?electron:req(name),__dirname:path.dirname(filename),process,
+   require:name=>name==='electron'?electron:name==='./core.cjs'&&Engine?{Engine}:req(name),__dirname:path.dirname(filename),process,AbortController,
    window:{addEventListener:(type,fn)=>listeners.set(type,fn)}
   },{filename});
  }
@@ -62,4 +62,32 @@ test('desktop drop uses platform file paths and preserves origin tokens on succe
  assert.equal(answers.length,2);
  assert.match(answers.find(a=>a.id===1)?.error,/missing/);
  assert.deepEqual(answers.find(a=>a.id===2),{id:2,file:'项目',kind:'folder'});
+});
+
+test('desktop Stop during attachment copy restores eligibility to send the same draft',async t=>{
+ const prompts=[];
+ class Engine{
+  constructor(options){Object.assign(this,options);this.rpc={closed:false}}
+  async init(){}
+  async open(){return 'fixture-session'}
+  async prompt(text,files){prompts.push({text,files})}
+ }
+ const {api,tmp,setPick}=await desktop(t,{Engine});
+ const executable=path.join(tmp,'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
+ await Promise.all([fs.writeFile(executable,'fixture (not executed)',{mode:0o700}),fs.mkdir(project),fs.writeFile(file,'draft')]);
+ setPick({filePaths:[executable]});await api.executable();
+ setPick({filePaths:[project]});await api.pick();
+ await api.connect('example',project,null,false,false);
+ setPick({filePaths:[file]});const [{id}]=await api.attach('file');
+ const base=path.join(project,'.orbit-attachments'),writeFile=fs.writeFile;let cancel=true;
+ t.mock.method(fs,'writeFile',async(dest,...args)=>{
+  const result=await writeFile(dest,...args);
+  if(cancel&&dest.startsWith(base+path.sep)){cancel=false;await api.stop('example')}
+  return result;
+ });
+ await assert.rejects(api.prompt('example','work',[id]),/本次附件未发送/);
+ assert.equal(prompts.length,0);assert.deepEqual(await fs.readdir(base),[]);
+ await api.prompt('example','work',[id]);
+ assert.equal(prompts.length,1);
+ assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
 });

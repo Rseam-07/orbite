@@ -23,7 +23,7 @@ function exe(){
 function ipc(name,run){ipcMain.handle(name,(e,...args)=>{if(e.senderFrame!==e.sender.mainFrame||e.sender!==win?.webContents)throw new Error('Invalid sender');return run(...args)})}
 function send(task,event){if(win&&!win.isDestroyed())win.webContents.send('engine-event',{...event,task})}
 function close(task,notify=false){
- const r=runners.get(task);if(!r)return;runners.delete(task);r.close();
+ const r=runners.get(task);if(!r)return;runners.delete(task);cancelPreparation(r);r.close();
  if(notify)send(task,{type:'sleep'});
 }
 function get(task){if(!validId(task)||!runners.has(task))throw new Error('这个会话尚未连接');return runners.get(task)}
@@ -102,31 +102,31 @@ ipc('paste-image',(mime,bytes)=>{
  return {name,kind,size,clipboard,id};
 });
 ipc('forget',forgetAttachment);
+function cancelPreparation(r){r.preparing?.abort(new Error('已取消发送；本次附件未发送。'))}
 ipc('prompt',async(task,text,ids)=>{
  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('输入为空或超过长度限制');
  if(!Array.isArray(ids)||ids.length>16||ids.some(i=>!attachments.has(i)))throw new Error('附件已失效，请重新选取。');
  const r=get(task);if(r.active||r.preparing)throw new Error('当前回合仍在运行');
  if([...runners.values()].some(other=>other!==r&&(other.active||other.preparing)&&(other.cwd===r.cwd||other.cwd.startsWith(r.cwd+path.sep)||r.cwd.startsWith(other.cwd+path.sep))))throw new Error('当前目录正在被另一会话使用。可用独立工作树并行运行。');if(r.extensions.length&&(cuaBusy||[...runners.values()].some(x=>x!==r&&x.extensions?.length&&(x.active||x.preparing))))throw new Error('另一会话正在使用桌面控制。请等它完成再运行。');
- r.preparing=true;r.stopPreparing=false;
+ const preparation=new AbortController();r.preparing=preparation;
  try{
-  const files=await stage(r.cwd,ids.map(i=>attachments.get(i)));
-  if(r!==runners.get(task)||r.stopPreparing)throw new Error('已取消发送；如已生成附件副本，仍保存在项目的附件目录。');
+  const files=await stage(r.cwd,ids.map(i=>attachments.get(i)),{signal:preparation.signal});
   for(const f of files)if(f.skipped.length)r.emit({type:'activity',text:'附件 '+f.name+'：跳过 '+f.skipped.length+' 项（符号链接、依赖目录或常见凭据文件）'});
-  const turn=r.prompt(text,files);r.preparing=false;
+  const turn=r.prompt(text,files);r.preparing=null;
   try{await turn}catch(e){
    if(r.rpc.closed){ids.forEach(forgetAttachment);return {uncertain:true,message:e.message};}
    throw e;
   }
   ids.forEach(forgetAttachment);
   return {ok:true};
- }finally{r.preparing=false}
+ }finally{if(r.preparing===preparation)r.preparing=null}
 });
 ipc('steer',async(task,text)=>{
  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('补充内容为空或过长');
  const r=get(task);
  try{return await r.steer(text)}catch(e){if(r.rpc.closed)return {uncertain:true,message:e.message};throw e}
 });
-ipc('stop',task=>{const r=get(task);if(r.preparing){r.stopPreparing=true;return}return r.cancel()});
+ipc('stop',task=>{const r=get(task);if(r.preparing)return cancelPreparation(r);return r.cancel()});
 ipc('decide',(task,key,choice)=>get(task).decide(key,choice));
 ipc('reveal',async task=>{
  const s=scopes.get(task);if(!s)throw new Error('工作树尚未准备。');
