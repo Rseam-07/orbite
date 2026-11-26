@@ -434,9 +434,14 @@ function handle(e){
 async function send(){
  let s=runtime();if(s.connecting||draft().pasting)return;
  if(s.running){await steer();return}
- const d=draft(),text=d.text.trim()||(d.files.length?'请查看这些附件。':'');if(!text)return;
- if(!await connect()||draft()!==d||d.pasting)return;
- const t=current,id=t.id,local=d,files=local.files.slice();s=runtime(id);
+ const d=draft(),original=d.text,files=d.files.slice();
+ const text=original.trim()||(files.length?'请查看这些附件。':'');if(!text)return;
+ if(!await connect()||draft()!==d)return;
+ // Connection may wait for a folder picker, worktree or CLI. Only send the draft the user confirmed.
+ if(d.pasting||d.text!==original||d.files.length!==files.length||files.some((f,i)=>f!==d.files[i])){
+  setStatus('草稿已更新，请确认后再发送。');return;
+ }
+ const t=current,id=t.id,local=d;s=runtime(id);
  local.text='';local.files=[];s.error='';s.approvals.clear();s.assistant=null;
  const user={role:'user',text,files:files.map(({name,kind,size,clipboard})=>({name,kind,size,clipboard}))};t.messages.push(user);
  s.offlineWhileRunning=false;s.turnTools.clear();s.running=true;setStatus(demo?'预览运行中':'正在执行',id);render();persist();
