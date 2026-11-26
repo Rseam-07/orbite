@@ -13,3 +13,29 @@ test('rejects a symlink target for attachment storage',async t=>{
  const {root,src}=await fixture(t);await fs.symlink(src,p.join(root,'.orbit-attachments'));
  await assert.rejects(stage(root,[src]),/普通目录/);
 });
+
+const {clipboardImage}=require('../attachments.cjs');
+const examplePng=Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aP1sAAAAASUVORK5CYII=','base64');
+test('clipboard images have no workspace copy before send and stage alongside Finder files',async t=>{
+ const {root,src}=await fixture(t);const plain=p.join(src,'notes.txt');await fs.writeFile(plain,'notes');
+ const source=Uint8Array.from(examplePng),image=clipboardImage('image/png',source);source.fill(0);
+ await assert.rejects(fs.stat(p.join(root,'.orbit-attachments')),e=>e.code==='ENOENT');
+ const [staged,other]=await stage(root,[image,plain]);
+ assert.equal(staged.name,'剪贴板图片.png');assert.equal(staged.clipboard,true);assert.equal(staged.size,examplePng.length);
+ assert.equal(Object.hasOwn(staged,'bytes'),false);
+ assert.deepEqual(await fs.readFile(staged.path),examplePng);assert.equal(await fs.readFile(other.path,'utf8'),'notes');
+ assert.equal((await fs.stat(staged.path)).mode&0o777,0o600);
+});
+test('clipboard input rejects invalid MIME, signatures and oversized payloads',()=>{
+ assert.throws(()=>clipboardImage('image/svg+xml',examplePng),/格式无效/);
+ assert.throws(()=>clipboardImage('image/jpeg',examplePng),/格式无效/);
+ assert.throws(()=>clipboardImage('image/png',new Uint8Array(16*1024*1024+1)),/16 MiB/);
+ assert.throws(()=>clipboardImage('image/png',{data:[1,2,3]}));
+});
+test('staging caps combined clipboard attachments and cleans up a rejected batch',async t=>{
+ const {root}=await fixture(t);
+ const payload=Buffer.alloc(16*1024*1024);examplePng.copy(payload);
+ const image=clipboardImage('image/png',payload);
+ await assert.rejects(stage(root,Array(5).fill(image)),/超过限制/);
+ assert.deepEqual(await fs.readdir(p.join(root,'.orbit-attachments')),[]);
+});

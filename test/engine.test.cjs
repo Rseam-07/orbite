@@ -53,3 +53,18 @@ test('unacknowledged stop closes its connection rather than waiting forever',asy
  await start;a.r.cancel();await rejected;
  assert.equal((await offline)[0].code,'STOP_TIMEOUT');assert.equal(b.r.rpc.closed,false);
 });
+
+test('clipboard image uses ACP image input or a visible workspace-file fallback',async t=>{
+ const {r,stream}=fixture(t);
+ r.session='a1';
+ const data=await require('node:fs/promises').readFile(__filename);
+ const f={name:'剪贴板图片.png',kind:'file',size:data.length,path:__filename,relative:'.orbit-attachments/turn-1/1/剪贴板图片.png',clipboard:true};
+ let prompt;
+ r.rpc.call=async(method,params)=>{assert.equal(method,'session/prompt');prompt=params.prompt;return {stopReason:'end_turn'}};
+ const activity=[];stream.on('activity',e=>activity.push(e.text));
+ r.info={agentCapabilities:{promptCapabilities:{image:true}}};
+ await r.prompt('查看附件',[f]);assert.equal(prompt[1].type,'image');assert.equal(prompt[1].mimeType,'image/png');assert.equal(prompt[1].data,data.toString('base64'));assert.match(prompt[0].text,/剪贴板图片/);
+ await r.prompt('查看附件',[{...f,size:8*1024*1024+1}]);assert.equal(prompt[1].type,'resource_link');assert.match(activity.at(-1),/未作为内联图片发送/);
+ r.info={agentCapabilities:{}};await r.prompt('查看附件',[f]);assert.equal(prompt[1].type,'resource_link');
+ assert.equal(activity.length,2);
+});

@@ -2,6 +2,19 @@ const fs=require('node:fs/promises');
 const {constants}=require('node:fs');
 const path=require('node:path');
 const MAX_BYTES=64*1024*1024,MAX_ENTRIES=1000;
+const MAX_CLIPBOARD_IMAGE=16*1024*1024;
+const PNG=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
+function clipboardImage(mime,data){
+ if(!(data instanceof Uint8Array))throw new Error('剪贴板图片数据无效。');
+ if(data.byteLength>MAX_CLIPBOARD_IMAGE)throw new Error('剪贴板图片单张不能超过 16 MiB。');
+ const bytes=Buffer.from(data);
+ let ext;
+ if(mime==='image/png'&&bytes.length>8&&bytes.subarray(0,8).equals(PNG))ext='png';
+ if(mime==='image/jpeg'&&bytes.length>4&&bytes[0]===0xff&&bytes[1]===0xd8&&bytes[2]===0xff)ext='jpg';
+ if(mime==='image/webp'&&bytes.length>16&&bytes.toString('ascii',0,4)==='RIFF'&&bytes.toString('ascii',8,12)==='WEBP')ext='webp';
+ if(!ext)throw new Error('剪贴板图片格式无效。支持 PNG、JPEG 和 WebP。');
+ return {name:'剪贴板图片.'+ext,kind:'file',size:bytes.length,bytes,clipboard:true};
+}
 const blocked=n=>/^(\.git|\.hg|\.svn|\.orbit-attachments|node_modules|\.DS_Store|\.ssh|\.aws|\.npmrc|\.netrc|\.env(?:\..*)?)$/i.test(n)||/\.(pem|p12|pfx|key)$/i.test(n);
 async function describe(p){
  const name=path.basename(p);if(!name||blocked(name))throw new Error('不支持作为附件：'+name);
@@ -45,13 +58,16 @@ async function stage(root,paths){
    }
   }
   for(const [i,from] of paths.entries()){
-   const d=await describe(from);const abs=await fs.realpath(from);
+   const image=typeof from!=='string',d=image?{name:from.name,kind:from.kind,size:from.size,clipboard:true}:await describe(from);
    const parent=path.join(batch,String(i+1));await fs.mkdir(parent,{mode:0o700});
    const destination=path.join(parent,d.name),skipped=[];
-   await clone(abs,destination,skipped);
+   if(image){
+    if(++entries>MAX_ENTRIES||from.bytes.length>MAX_BYTES-bytes)throw new Error('附件总大小或条目超过限制。');
+    await fs.writeFile(destination,from.bytes,{flag:'wx',mode:0o600});bytes+=from.bytes.length;
+   }else await clone(await fs.realpath(from),destination,skipped);
    result.push({...d,path:destination,relative:path.relative(root,destination),skipped});
   }
   return result;
  }catch(e){await fs.rm(batch,{recursive:true,force:true});throw e}
 }
-module.exports={describe,stage};
+module.exports={describe,stage,clipboardImage};

@@ -50,7 +50,10 @@ class Engine {
     const mime={png:'image/png',jpg:'image/jpeg',jpeg:'image/jpeg',webp:'image/webp'}[f.name.toLowerCase().split('.').at(-1)];
     if(mime&&f.kind==='file'&&f.size>0&&f.size<=imageBudget&&this.info?.agentCapabilities?.promptCapabilities?.image){
      const b=await fs.readFile(f.path);input.push({type:'image',mimeType:mime,data:b.toString('base64')});imageBudget-=b.length;
-    }else if(f.kind==='file')input.push({type:'resource_link',name:f.name,uri:pathToFileURL(f.path).href,size:f.size??undefined});
+    }else if(f.kind==='file'){
+     input.push({type:'resource_link',name:f.name,uri:pathToFileURL(f.path).href,size:f.size??undefined});
+     if(f.clipboard)this.emit({type:'activity',text:f.name+' 以工作区文件发送（未作为内联图片发送）。'});
+    }
    }
    this.promptOnWire=!this.cancelRequested;
    const r=this.cancelRequested?{stopReason:'cancelled'}:await this.rpc.call('session/prompt',{sessionId:this.session,prompt:input},0);

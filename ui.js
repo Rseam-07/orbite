@@ -37,7 +37,7 @@ if(demo&&!data.projects.length){
 }
 let view='home',saveTimer=0,scrollTicket=0,reviewMotionTimer=0;
 let current=data.threads.find(x=>x.id===data.selected)||null,folder=current?.folder??null,tab='diff',driverSelected=false,cuaStatus=null,cuaTestResult=null,cuaWorking=false;
-const authorized=new Set(demo?data.projects.map(x=>x.path):[]),drafts=new Map(),states=new Map();
+const authorized=new Set(demo?data.projects.map(x=>x.path):[]),drafts=new Map(),states=new Map(),incomingDrops=new Map();
 const demoOptions=[{id:'model',name:'模型（离线预览）',currentValue:'demo-model',options:[{value:'demo-model',name:'Gemini'}]},{id:'mode',name:'模式（离线预览）',currentValue:'default',options:[{value:'default',name:'默认'},{value:'plan',name:'计划'}]}];
 function runtime(id=key()){
  if(!states.has(id))states.set(id,{running:false,connecting:false,session:null,authState:null,options:demo?demoOptions:[],changeIndex:0,review:null,extensionEnabled:false,turns:new Map(),approvals:new Map(),plan:[],activity:[],turnTools:new Map(),demoTimer:0,error:'',status:'',isolatedReady:false,taskDiff:new Map(),diffMode:'workspace',steering:false,refreshSeq:0,dirtyText:false,flushFrame:0,offlineWhileRunning:false,commands:demo?[{name:'plan',description:'先制定计划'},{name:'compact',description:'压缩会话上下文'}]:[]});
@@ -151,7 +151,7 @@ function renderSidebar(){
 }
 function size(n){return n===0?'0 B':n>=1048576?(n/1048576).toFixed(1)+' MB':n>=1024?Math.round(n/1024)+' KB':n+' B'}
 function chip(file,removable){
- const d=el('span',null,'chip');d.title=file.name;d.append(icon(file.kind==='folder'?'folder':'file'),el('span',file.name,'file-name'));
+ const d=el('span',null,'chip');d.title=file.name;d.append(icon(file.clipboard?'image':file.kind==='folder'?'folder':'file'),el('span',file.name,'file-name'));
  if(Number.isFinite(file.size)&&file.kind==='file')d.append(el('span',size(file.size),'size'));
  if(removable){const x=el('button');x.setAttribute('aria-label','移除 '+file.name);x.title='移除';x.append(icon('close'));x.onclick=()=>{draft().files=draft().files.filter(f=>f.id!==file.id);api?.forget(file.id).catch(()=>{});renderAttachments()};d.append(x)}
  return d;
@@ -162,11 +162,37 @@ function renderAttachments(){
  [...tray.children].filter(n=>!seen.has(n.dataset.attachment)).forEach(n=>motion.enter(n));
  $('footerHint').textContent=f.length&&api?'附件发送时复制到项目 · ⌘ ↵':'⌘ ↵ 发送';
 }
-function addAttachments(files){
- const d=draft(),n=Math.max(0,16-d.files.length);d.files.push(...files.slice(0,n));
+function addAttachments(files,d=draft()){
+ const n=Math.max(0,16-d.files.length);d.files.push(...files.slice(0,n));
  for(const a of files.slice(n))api?.forget(a.id).catch(()=>{});
- if(n<files.length)notice('每条消息最多添加 16 个附件。');
- renderAttachments();
+ if(d===draft()){
+  if(n<files.length)notice('每条消息最多添加 16 个附件。');
+  renderAttachments();
+ }
+}
+async function pasteImage(e){
+ // Desktop accepts actual paste events only. The offline preview does not read or store image bytes.
+ if((!e.isTrusted&&!demo)||e.defaultPrevented||!e.clipboardData)return;
+ const clipboard=e.clipboardData;
+ if(clipboard.getData('text/plain'))return;
+ const images=[...clipboard.files].filter(f=>f.type.startsWith('image/'));
+ if(!images.length)return;
+ const types={'image/png':'png','image/jpeg':'jpg','image/webp':'webp'};
+ const image=images.find(f=>Object.hasOwn(types,f.type));
+ if(!image){notice('无法粘贴这种图片。请使用 PNG、JPEG 或 WebP。');return;}
+ e.preventDefault();
+ const d=draft(),id=key();
+ if(d.files.length>=16){notice('每条消息最多添加 16 个附件。');return}
+ if(!image.size||image.size>16*1024*1024){notice('请选择不超过 16 MiB 的剪贴板图片。');return}
+ if(d.pasting){notice('正在添加上一张图片，请稍候。');return}
+ if(!demo&&!api?.pasteImage){notice('桌面桥接未启动，请重启 Orbite。');return}
+ d.pasting=true;buttons();
+ try{
+  const file=demo?{id:crypto.randomUUID(),kind:'file',name:'剪贴板图片.'+types[image.type],size:image.size,clipboard:true}
+   :await api.pasteImage(image.type,new Uint8Array(await image.arrayBuffer()));
+  addAttachments([file],d);
+ }catch(err){if(d===draft())notice(err);else runtime(id).error=plain(err?.message||err)}
+ finally{d.pasting=false;if(d===draft())buttons()}
 }
 function parseDemo(files,dir){
  const names=new Set(),out=[];
@@ -250,7 +276,7 @@ function buttons(){
  $('auth').disabled=locked;$('selectExe').disabled=locked;$('folder').disabled=s.connecting;$('new').disabled=s.connecting;$('send').disabled=runtime().connecting||(!demo&&!api);$('sendIcon').setAttribute('href',runtime().running?'#i-stop':'#i-up');
  $('send').setAttribute('aria-label',s.running?'追加指令':'发送');$('send').title=s.running?'追加指令（⌘↵）':'发送（⌘↵）';
  $('sendIcon').setAttribute('href','#i-up');
- $('send').disabled=s.connecting||s.steering||(!demo&&!api);
+ $('send').disabled=s.connecting||s.steering||draft().pasting||(!demo&&!api);
  $('stop').hidden=!s.running;$('composer').classList.toggle('is-running',s.running);
  $('scopeMode').hidden=!folder;
  $('scopeMode').value=(current?.isolated??draft().isolated)?'worktree':'local';
@@ -406,13 +432,13 @@ function handle(e){
  }else if(e.type==='done')finish(id,e.status)
 }
 async function send(){
- let s=runtime();if(s.connecting)return;
+ let s=runtime();if(s.connecting||draft().pasting)return;
  if(s.running){await steer();return}
  const d=draft(),text=d.text.trim()||(d.files.length?'请查看这些附件。':'');if(!text)return;
- if(!await connect())return;
- const t=current,id=t.id,local=draft(),files=local.files.slice();s=runtime(id);
+ if(!await connect()||draft()!==d||d.pasting)return;
+ const t=current,id=t.id,local=d,files=local.files.slice();s=runtime(id);
  local.text='';local.files=[];s.error='';s.approvals.clear();s.assistant=null;
- const user={role:'user',text,files:files.map(({name,kind,size})=>({name,kind,size}))};t.messages.push(user);
+ const user={role:'user',text,files:files.map(({name,kind,size,clipboard})=>({name,kind,size,clipboard}))};t.messages.push(user);
  s.offlineWhileRunning=false;s.turnTools.clear();s.running=true;setStatus(demo?'预览运行中':'正在执行',id);render();persist();
  try{
   if(demo){
@@ -464,8 +490,8 @@ function renderCommands(){
 }
 function attachMenu(open){$('attachChoices').hidden=!open;$('attachmentMenu').setAttribute('aria-expanded',String(open))}
 async function attach(kind){
- attachMenu(false);
- try{if(demo)$(kind==='folder'?'demoFolder':'demoFiles').click();else if(api)addAttachments(await api.attach(kind))}
+ attachMenu(false);const d=draft();
+ try{if(demo)$(kind==='folder'?'demoFolder':'demoFiles').click();else if(api)addAttachments(await api.attach(kind),d)}
  catch(e){notice(e)}
 }
 function theme(s){
@@ -567,6 +593,7 @@ $('cuaDraft').onclick=async()=>{
  $('prompt').value=d.text;$('prompt').focus({preventScroll:true});
 };
 document.querySelectorAll('[data-dismiss]').forEach(b=>b.onclick=()=>closeDlg(b.dataset.dismiss));
+$('prompt').addEventListener('paste',pasteImage);
 $('attachmentMenu').onclick=()=>attachMenu($('attachChoices').hidden);
 $('addFiles').onclick=()=>attach('file');$('addFolder').onclick=()=>attach('folder');
 $('demoFiles').onchange=e=>{parseDemo(e.target.files,false);e.target.value=''};
@@ -577,7 +604,15 @@ function dragState(on){$('dropBanner').hidden=!on;$('composer').classList.toggle
 document.addEventListener('dragover',e=>{if(!fromFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';dragState(true)});
 document.addEventListener('dragleave',e=>{if(!e.relatedTarget)dragState(false)});
 document.addEventListener('drop',e=>{e.preventDefault();dragState(false);if(demo&&e.dataTransfer?.files.length)parseDemo(e.dataTransfer.files,false)});
-$('send').onclick=send;$('stop').onclick=stop;$('scopeMode').onchange=()=>{draft().isolated=$('scopeMode').value==='worktree';$('scopeMode').title=draft().isolated?'从当前提交创建隔离工作树，不包含未提交改动':'直接在项目目录工作'};api?.onDrop(addAttachments,notice);api?.onEvent(handle);
+$('send').onclick=send;$('stop').onclick=stop;$('scopeMode').onchange=()=>{draft().isolated=$('scopeMode').value==='worktree';$('scopeMode').title=draft().isolated?'从当前提交创建隔离工作树，不包含未提交改动':'直接在项目目录工作'};api?.onDrop(()=>{
+ const token=crypto.randomUUID();incomingDrops.set(token,{d:draft(),id:key()});return token;
+},(files,token)=>{
+ const origin=incomingDrops.get(token);incomingDrops.delete(token);
+ if(origin)addAttachments(files,origin.d);else for(const f of files)api.forget(f.id).catch(()=>{});
+},(err,token)=>{
+ const origin=incomingDrops.get(token);incomingDrops.delete(token);
+ if(origin?.d===draft())notice(err);else if(origin)runtime(origin.id).error=plain(err);
+});api?.onEvent(handle);
 document.addEventListener('keydown',e=>{
  if(e.isComposing)return;
  if((e.metaKey||e.ctrlKey)&&e.key==='1'){e.preventDefault();showHub()}

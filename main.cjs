@@ -2,9 +2,15 @@ const {app,BrowserWindow,ipcMain,dialog,nativeTheme,shell}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {worktree,review,validId,exportPatch}=require('./workspace.cjs');
 const cua=require('./computer-use.cjs');
 const {Engine}=require('./core.cjs');
-const {describe,stage}=require('./attachments.cjs');
+const {describe,stage,clipboardImage}=require('./attachments.cjs');
 const {randomUUID}=require('node:crypto');
-const attachmentPaths=new Map();
+const attachments=new Map();
+let draftImageBytes=0;
+function forgetAttachment(id){
+ const image=attachments.get(id);
+ if(image?.clipboard)draftImageBytes-=image.size;
+ attachments.delete(id);
+}
 let win,cliPath,computerUsePath,cuaBusy=false;const roots=new Set(),runners=new Map(),scopes=new Map(),creating=new Set();
 function exe(){
  const n='agy';
@@ -89,7 +95,7 @@ async function rememberAttachments(files){
  for(const p of files.slice(0,16)){
   if(typeof p!=='string'||!path.isAbsolute(p))continue;
   const real=await fs.promises.realpath(p);if([path.parse(real).root,os.homedir()].includes(real))throw new Error('不能添加整个磁盘或主目录。');
-  const d=await describe(p);const id=randomUUID();attachmentPaths.set(id,p);output.push({...d,id});
+  const d=await describe(p);const id=randomUUID();attachments.set(id,p);output.push({...d,id});
  }
  return output;
 }
@@ -97,23 +103,30 @@ ipc('attach',(kind)=>{if(!['file','folder'].includes(kind))throw new Error('未�
  return dialog.showOpenDialog(win,{title:'添加到下一条消息',properties:[kind==='file'?'openFile':'openDirectory','multiSelections']}).then(a=>a.canceled?[]:rememberAttachments(a.filePaths));
 });
 ipc('drop',files=>{if(!Array.isArray(files))throw new Error('无效拖拽内容');return rememberAttachments(files)});
-ipc('forget',id=>{attachmentPaths.delete(id)});
+ipc('paste-image',(mime,bytes)=>{
+ const image=clipboardImage(mime,bytes);
+ if(draftImageBytes+image.size>64*1024*1024)throw new Error('草稿图片已达 64 MiB。请先发送或移除一些图片。');
+ const {name,kind,size,clipboard}=image,id=randomUUID();
+ attachments.set(id,image);draftImageBytes+=image.size;
+ return {name,kind,size,clipboard,id};
+});
+ipc('forget',forgetAttachment);
 ipc('prompt',async(task,text,ids)=>{
  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('输入为空或超过长度限制');
- if(!Array.isArray(ids)||ids.length>16||ids.some(i=>!attachmentPaths.has(i)))throw new Error('附件已失效，请重新选取。');
+ if(!Array.isArray(ids)||ids.length>16||ids.some(i=>!attachments.has(i)))throw new Error('附件已失效，请重新选取。');
  const r=get(task);if(r.active||r.preparing)throw new Error('当前回合仍在运行');
  if([...runners.values()].some(other=>other!==r&&(other.active||other.preparing)&&(other.cwd===r.cwd||other.cwd.startsWith(r.cwd+path.sep)||r.cwd.startsWith(other.cwd+path.sep))))throw new Error('当前目录正在被另一会话使用。可用独立工作树并行运行。');if(r.extensions.length&&(cuaBusy||[...runners.values()].some(x=>x!==r&&x.extensions?.length&&(x.active||x.preparing))))throw new Error('另一会话正在使用桌面控制。请等它完成再运行。');
  r.preparing=true;r.stopPreparing=false;
  try{
-  const files=await stage(r.cwd,ids.map(i=>attachmentPaths.get(i)));
+  const files=await stage(r.cwd,ids.map(i=>attachments.get(i)));
   if(r!==runners.get(task)||r.stopPreparing)throw new Error('已取消发送；如已生成附件副本，仍保存在项目的附件目录。');
   for(const f of files)if(f.skipped.length)r.emit({type:'activity',text:'附件 '+f.name+'：跳过 '+f.skipped.length+' 项（符号链接、依赖目录或常见凭据文件）'});
   const turn=r.prompt(text,files);r.preparing=false;
   try{await turn}catch(e){
-   if(r.rpc.closed)return {uncertain:true,message:e.message};
+   if(r.rpc.closed){ids.forEach(forgetAttachment);return {uncertain:true,message:e.message};}
    throw e;
   }
-  for(const id of ids)attachmentPaths.delete(id);
+  ids.forEach(forgetAttachment);
   return {ok:true};
  }finally{r.preparing=false}
 });
@@ -161,5 +174,5 @@ if(!app.requestSingleInstanceLock())app.quit();else{
   win.webContents.on('will-navigate',e=>e.preventDefault());
   win.loadFile('index.html',{query:{desktop:'1'}});
  });
- app.on('window-all-closed',()=>{for(const task of runners.keys())close(task);app.quit()});
+ app.on('window-all-closed',()=>{attachments.clear();draftImageBytes=0;for(const task of runners.keys())close(task);app.quit()});
 }
