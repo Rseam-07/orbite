@@ -453,7 +453,7 @@ async function stop(){
  const id=key(),s=runtime(id);if(!s.running)return;
  try{if(demo){clearTimeout(s.demoTimer);finish(id,'cancelled')}else await api.stop(id)}catch(e){notice(e)}
 }
-let commandIndex=-1;
+let commandIndex=-1,dismissedCommand=null;
 $('commands').setAttribute('role','listbox');
 $('prompt').setAttribute('aria-controls','commands');
 function selectCommand(index){
@@ -464,7 +464,9 @@ function selectCommand(index){
  else prompt.setAttribute('aria-activedescendant',menu.children[index].id);
 }
 function renderCommands(){
- const token=$('prompt').value.match(/^\/([\w-]*)$/),menu=$('commands');
+ const value=$('prompt').value,menu=$('commands');
+ if(dismissedCommand&&(dismissedCommand.id!==key()||dismissedCommand.value!==value))dismissedCommand=null;
+ const token=!dismissedCommand&&value.match(/^\/([\w-]*)$/);
  const commands=token?runtime().commands.filter(x=>x.name.startsWith(token[1])).slice(0,7):[];
  menu.hidden=!commands.length;menu.replaceChildren();selectCommand(-1);
  for(const [i,c] of commands.entries()){
@@ -609,7 +611,10 @@ document.addEventListener('keydown',e=>{
  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='k'){e.preventDefault();opensSidebar()}
  if((e.metaKey||e.ctrlKey)&&e.key.toLowerCase()==='n'&&!runtime().connecting){e.preventDefault();$('new').click()}
  if((e.metaKey||e.ctrlKey)&&e.key==='Enter'&&!document.querySelector('dialog[open]')){e.preventDefault();send()}
- if(e.key==='Escape'){if(!$('attachChoices').hidden)attachMenu(false);menu.hidden=true;selectCommand(-1)}
+ if(e.key==='Escape'){
+  if(!$('attachChoices').hidden)attachMenu(false);
+  if(!menu.hidden){dismissedCommand={id:key(),value:$('prompt').value};renderCommands()}
+ }
 });
 if(innerWidth<=640)sidebar(false);
 viewLayout('home');render();scanProject();renderActivity();setStatus();
