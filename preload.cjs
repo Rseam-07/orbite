@@ -1,0 +1,26 @@
+const {contextBridge,ipcRenderer,webUtils}=require('electron');
+contextBridge.exposeInMainWorld('orbit',{
+ pick:s=>ipcRenderer.invoke('pick',s),
+ executable:()=>ipcRenderer.invoke('executable'),
+ computerUse:()=>ipcRenderer.invoke('computer-use'),
+ cuaProbe:()=>ipcRenderer.invoke('cua-local-probe'),
+ cuaTest:()=>ipcRenderer.invoke('cua-local-test'),
+ cuaGrant:()=>ipcRenderer.invoke('cua-local-grant'),
+ cuaDocs:()=>ipcRenderer.invoke('cua-docs'),
+ exportPatch:(task,root)=>ipcRenderer.invoke('export-patch',task,root),
+ disconnect:t=>ipcRenderer.invoke('disconnect',t),
+ configure:(t,id,value)=>ipcRenderer.invoke('configure',t,id,value),
+ connect:(t,c,id,ext,isolated)=>ipcRenderer.invoke('connect',t,c,id,ext,isolated),
+ worktree:(t,c)=>ipcRenderer.invoke('worktree',t,c),
+ reveal:t=>ipcRenderer.invoke('reveal',t),
+ authenticate:t=>ipcRenderer.invoke('authenticate',t),
+ prompt:(t,s,ids)=>ipcRenderer.invoke('prompt',t,s,ids),
+ steer:(t,s)=>ipcRenderer.invoke('steer',t,s),
+ attach:kind=>ipcRenderer.invoke('attach',kind),
+ forget:id=>ipcRenderer.invoke('forget',id),
+ onDrop:(ok,fail)=>window.addEventListener('drop',e=>{if(!e.isTrusted||!e.dataTransfer?.files.length)return;e.preventDefault();const files=[...e.dataTransfer.files].map(f=>webUtils.getPathForFile(f)).filter(Boolean);if(files.length)ipcRenderer.invoke('drop',files).then(ok,e=>fail(e.message));},true),
+ stop:t=>ipcRenderer.invoke('stop',t),
+ decide:(t,k,c)=>ipcRenderer.invoke('decide',t,k,c),
+ diff:(t,c,isolated)=>ipcRenderer.invoke('diff',t,c,isolated),
+ onEvent:fn=>{ipcRenderer.on('engine-event',(_e,data)=>fn(data))}
+});

@@ -1,0 +1,59 @@
+<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'"><title>Orbit</title><link rel="stylesheet" href="style.css"><script defer src="motion.js"></script><script defer src="ui.js"></script></head><body>
+<svg class="symbols" xmlns="http://www.w3.org/2000/svg" aria-hidden="true" viewBox="0 0 20 20">
+<symbol id="i-plus" viewBox="0 0 20 20"><path d="M10 4v12M4 10h12"/></symbol>
+<symbol id="i-sidebar" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M8 4v12"/></symbol>
+<symbol id="i-pane" viewBox="0 0 20 20"><rect x="3" y="4" width="14" height="12" rx="2"/><path d="M12 4v12"/></symbol>
+<symbol id="i-edit" viewBox="0 0 20 20"><path d="M10 4H5a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h9a2 2 0 0 0 2-2v-5M8 12l.5-2.5 6-6a1.4 1.4 0 0 1 2 2l-6 6z"/></symbol>
+<symbol id="i-find" viewBox="0 0 20 20"><circle cx="8.7" cy="8.7" r="4.4"/><path d="m12 12 4 4"/></symbol>
+<symbol id="i-folder" viewBox="0 0 20 20"><path d="M3 6a1.5 1.5 0 0 1 1.5-1.5h4L10 6h5.5A1.5 1.5 0 0 1 17 7.5v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></symbol>
+<symbol id="i-chat" viewBox="0 0 20 20"><path d="M4 5.5h12v8H9l-3 2.5v-2.5H4z"/></symbol>
+<symbol id="i-branch" viewBox="0 0 20 20"><circle cx="6" cy="5" r="1.6"/><circle cx="6" cy="15" r="1.6"/><circle cx="14" cy="5" r="1.6"/><path d="M6 7v6m8-6c0 4-5 4-8 4"/></symbol>
+<symbol id="i-file" viewBox="0 0 20 20"><path d="M5 3h7l3 3v11H5zm7 0v4h3m-7 3h4m-4 3h4"/></symbol>
+<symbol id="i-up" viewBox="0 0 20 20"><path d="m5 10 5-5 5 5m-5-5v11"/></symbol>
+<symbol id="i-stop" viewBox="0 0 20 20"><rect x="5.5" y="5.5" width="9" height="9" rx="1"/></symbol>
+<symbol id="i-settings" viewBox="0 0 20 20"><path d="M4 6h12M4 10h12M4 14h12"/><circle cx="7" cy="6" r="1.3"/><circle cx="13" cy="10" r="1.3"/><circle cx="9" cy="14" r="1.3"/></symbol>
+<symbol id="i-extension" viewBox="0 0 20 20"><rect x="3" y="3" width="6" height="6" rx="1"/><rect x="11" y="3" width="6" height="6" rx="1"/><rect x="3" y="11" width="6" height="6" rx="1"/><rect x="11" y="11" width="6" height="6" rx="1"/></symbol>
+<symbol id="i-chevron" viewBox="0 0 20 20"><path d="m7 5 5 5-5 5"/></symbol>
+<symbol id="i-check" viewBox="0 0 20 20"><path d="m5 10 3.5 3.5L15 7"/></symbol>
+<symbol id="i-refresh" viewBox="0 0 20 20"><path d="M16 7V3m0 4h-4m4 0a6 6 0 1 0 .3 5"/></symbol>
+<symbol id="i-close" viewBox="0 0 20 20"><path d="m6 6 8 8m0-8-8 8"/></symbol>
+</svg>
+<div id="app" class="app">
+<aside id="sidebar"><div class="side-head"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="side-brand">Orbit</span><button class="icon" id="collapse" title="隐藏侧栏" aria-label="隐藏侧栏"><svg><use href="#i-sidebar"/></svg></button></div>
+<div class="top-links"><button id="showHub" class="nav"><svg><use href="#i-extension"/></svg>工作台<kbd>⌘ 1</kbd></button><button id="new" class="nav"><svg><use href="#i-edit"/></svg>新建会话<kbd>⌘ N</kbd></button><button id="searchBtn" class="nav"><svg><use href="#i-find"/></svg>搜索会话<kbd>⌘ K</kbd></button></div>
+<div id="searchWrap" hidden><input id="search" type="search" aria-label="搜索项目和会话" placeholder="搜索项目和会话"></div>
+<div class="project-label"><span>项目</span><button class="icon" id="folder" title="打开项目" aria-label="打开项目"><svg><use href="#i-plus"/></svg></button></div>
+<div id="projects"></div>
+<div class="sidebar-bottom"><button id="extensions" class="nav"><svg><use href="#i-extension"/></svg>扩展</button><button id="setup" class="nav"><svg><use href="#i-settings"/></svg>设置 <span id="sideStatus"></span></button></div></aside>
+<main id="workspace">
+<header class="toolbar"><button id="expand" class="icon" title="显示侧栏" aria-label="显示侧栏" hidden><svg><use href="#i-sidebar"/></svg></button>
+<div class="breadcrumbs"><span id="projectName">Orbit</span><svg><use href="#i-chevron"/></svg><strong id="taskTitle">工作台</strong></div><span class="toolbar-rule"></span><span id="toolbarEngine">Antigravity</span>
+<span class="grow"></span><span id="demoFlag" hidden>离线预览</span><button id="openDiff" class="toolbar-button" aria-expanded="false"><svg><use href="#i-pane"/></svg><span>审阅</span><span id="diffCount" hidden></span></button></header>
+<div id="scene" data-view="home"><section id="hub" aria-label="工作台">
+<div class="hub-inner"><header class="hub-head"><h1 id="hubTitle" tabindex="-1">工作台</h1><button id="hubOpen" class="secondary"><svg><use href="#i-plus"/></svg>打开项目</button></header>
+<div class="hub-section"><div class="section-title"><h2>项目</h2><span id="hubProjectCount"></span></div>
+<div class="list-head"><span>名称</span><span>最近会话</span><span>状态</span></div><div id="hubTiles"></div></div>
+<div class="hub-recent"><div class="section-title"><h2>最近会话</h2><span id="hubQueue"></span></div><div id="hubRecents"></div></div>
+</div></section><div id="body" data-review="closed"><div id="conversation">
+<div class="route-head"><div id="routeMarker"></div><div><div class="route-index"><span id="routeProject">项目</span></div><h1 id="routeTitle" tabindex="-1">新建会话</h1></div></div>
+<section id="chat" aria-live="polite"><div id="timeline">
+<div id="welcome"><h1 id="emptyTitle">新建会话</h1><p id="emptyText">选择项目后开始。</p><button id="emptyPick" class="secondary">打开项目…</button></div>
+<div id="messages"></div><div id="toolSummary"></div><div id="live"></div></div></section>
+<div class="composer-wrap"><div class="composer" id="composer"><span class="prompt-prefix" aria-hidden="true">›</span><div id="commands" aria-label="Antigravity 命令" hidden></div><div id="dropBanner" hidden>松开添加文件或文件夹</div><div id="attachmentTray" hidden></div><textarea id="prompt" rows="2" placeholder="输入指令，或拖入文件…" aria-label="消息"></textarea>
+<div class="compose-bar"><div class="attach-control"><button id="attachmentMenu" class="icon" title="添加文件或文件夹" aria-label="添加文件或文件夹" aria-expanded="false"><svg><use href="#i-plus"/></svg></button><div id="attachChoices" hidden><button id="addFiles"><svg><use href="#i-file"/></svg>添加文件…</button><button id="addFolder"><svg><use href="#i-folder"/></svg>添加文件夹…</button></div></div><div class="config" id="options"><span>Antigravity</span></div><span class="grow"></span><span id="runStatus" role="status"></span><button id="stop" class="icon" title="停止回合" aria-label="停止回合" hidden><svg><use href="#i-stop"/></svg></button><button id="send" class="send" title="发送（⌘↵）" aria-label="发送"><svg><use id="sendIcon" href="#i-up"/></svg></button></div></div>
+<div class="composer-footer"><span id="workspaceScope"><svg><use href="#i-folder"/></svg><span id="scopeName">未选择项目</span></span><select id="scopeMode" title="运行位置" aria-label="运行位置" hidden><option value="local">项目目录</option><option value="worktree">独立工作树</option></select><button id="reveal" class="icon" title="显示工作树目录" aria-label="显示工作树目录" hidden><svg><use href="#i-folder"/></svg></button><span id="branchWrap" hidden><svg><use href="#i-branch"/></svg><span id="branch"></span></span><span class="grow"></span><span id="footerHint">⌘ ↵ 发送</span></div></div></div>
+<div class="review-shell" id="reviewShell" inert aria-hidden="true"><aside id="inspector" aria-label="审阅"><div class="review-heading"><span>审阅工作区</span></div><div class="ins-top"><div class="segment"><button data-tab="diff" class="selected">变更</button><button data-tab="activity">活动</button></div><span class="grow"></span><button class="secondary" id="exportPatch" hidden>导出补丁…</button><button class="icon" id="refresh" title="刷新 Git 状态" aria-label="刷新 Git 状态"><svg><use href="#i-refresh"/></svg></button><button class="icon" id="closeDiff" title="关闭审阅" aria-label="关闭审阅"><svg><use href="#i-close"/></svg></button></div>
+<section data-panel="diff"><div class="review-source"><select id="reviewMode" aria-label="变更范围"><option value="workspace">工作区状态</option><option value="task">本会话工具变更</option></select></div><div id="changedFiles"></div><div id="patch"></div></section><section data-panel="activity" hidden><div id="plan"></div><div id="activity"></div></section></aside></div></div></div></main></div>
+<input type="file" hidden id="demoFiles" multiple><input type="file" hidden id="demoFolder" webkitdirectory multiple>
+<dialog id="settings"><header><h2>设置</h2><button class="icon" data-dismiss="settings" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header>
+<div class="setting-row"><div><b>Google 账户</b><small id="accountText">由 Antigravity CLI 登录和保存凭据。</small></div><button id="auth" class="secondary">连接</button></div>
+<div class="setting-row"><div><b>Antigravity CLI</b><small id="cliText">自动查找本机 agy。</small></div><button id="selectExe" class="secondary">选择 agy…</button></div>
+<div class="setting-row"><div><b>外观</b><small>可跟随 macOS 系统设置。</small></div><select id="theme" aria-label="外观"><option value="system">系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div><label class="setting-row check-row"><div><b>玻璃质感</b><small>关闭可减少静止面板的背景模糊。</small></div><input id="glassToggle" type="checkbox" checked></label><div id="dialogStatus" class="dialog-status" role="status"></div></dialog>
+<dialog id="extensionDialog" class="cua-dialog"><header><h2>Computer Use</h2><button class="icon" data-dismiss="extensionDialog" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header>
+<div class="extension-heading"><div class="extension-icon"><svg><use href="#i-pane"/></svg></div><div><b id="extensionStatus">尚未检测</b><small>本机 Cua Driver / Antigravity MCP</small></div></div>
+<div class="cua-steps"><div><span>01</span><strong>驱动</strong><b id="cuaDriverState">未检测</b></div><div><span>02</span><strong>辅助功能 / 录屏</strong><b id="cuaPermState">未检测</b></div><div><span>03</span><strong>后台输入</strong><b id="cuaTestState">未自测</b></div></div>
+<div class="cua-actions"><button class="secondary" id="cuaProbe">检测本机</button><button class="secondary" id="chooseDriver">手动选择…</button><button class="secondary" id="cuaDocs">安装说明</button><button class="secondary" id="cuaGrant" disabled>打开授权流程…</button><button class="secondary" id="cuaTest" disabled>运行官方自测</button></div>
+<p>检测不会截图。「官方自测」会读取一次屏幕，并在后台 TextEdit 测试输入，不保存测试文稿。自动控制只在你选中的会话启用。</p>
+<label class="setting-row check-row"><span>将 Cua Driver 接到当前会话</span><input id="useDriver" type="checkbox" disabled></label>
+<div class="cua-actions"><button class="secondary" id="cuaDraft" disabled>填入只读联调指令</button></div><p id="extNote" class="dialog-status" role="status"></p></dialog>
+</body></html>

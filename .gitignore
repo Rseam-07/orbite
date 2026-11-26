@@ -1,0 +1,15 @@
+node_modules/
+dist/
+out/
+coverage/
+Orbit-Preview.html
+.DS_Store
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*.p12
+*.mobileprovision
+*.log
+.orbit-attachments/
