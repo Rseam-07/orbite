@@ -197,6 +197,7 @@ async function pasteImage(e){
 function parseDemo(files,dir){
  const names=new Set(),out=[];
  for(const f of files){const relative=f.webkitRelativePath?.split('/')[0],name=relative||f.name;if(names.has(name))continue;names.add(name);out.push({name,kind:dir||relative||f.type===''&&f.size===0?'folder':'file',size:relative?null:f.size,id:crypto.randomUUID()})}
+ if(out.length>16){notice('一次最多选择 16 个附件。本次未添加，请减少数量后重试。');return}
  addAttachments(out)
 }
 function textParts(into,text){

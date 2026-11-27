@@ -3,7 +3,7 @@ const {constants}=require('node:fs');
 const path=require('node:path');
 const os=require('node:os');
 const {randomUUID}=require('node:crypto');
-const MAX_BYTES=64*1024*1024,MAX_ENTRIES=1000;
+const MAX_BYTES=64*1024*1024,MAX_ENTRIES=1000,MAX_SELECTION=16;
 const MAX_CLIPBOARD_IMAGE=16*1024*1024;
 const PNG=Buffer.from([0x89,0x50,0x4e,0x47,0x0d,0x0a,0x1a,0x0a]);
 function clipboardImage(mime,data){
@@ -24,8 +24,9 @@ async function describe(p){
  return {name,kind:stat.isDirectory()?'folder':'file',size:stat.isFile()?stat.size:null};
 }
 async function registerPaths(files,registry){
+ if(files.length>MAX_SELECTION)throw new Error('一次最多选择 16 个附件。本次未添加，请减少数量后重试。');
  const pending=[];
- for(const file of files.slice(0,16)){
+ for(const file of files){
   if(typeof file!=='string'||!path.isAbsolute(file))continue;
   try{
    const real=await fs.realpath(file);
