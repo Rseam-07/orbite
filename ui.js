@@ -90,8 +90,10 @@ function showHub(){
 function renderHub(){
  if(view!=='home')return;
  const grid=$('hubTiles'),recent=$('hubRecents');grid.replaceChildren();recent.replaceChildren();
- const projects=data.projects.slice(0,30);
- $('hubProjectCount').textContent=projects.length?String(projects.length):'';
+ const projects=data.projects.slice(0,30),isEmpty=projects.length===0;
+ $('hub').toggleAttribute('data-empty',isEmpty);
+ $('hubProjects').querySelector('.list-head').hidden=isEmpty;
+ $('hubProjectCount').textContent=isEmpty?'':String(projects.length);
  for(const p of projects){
   const threads=data.threads.filter(t=>t.folder===p.path),pending=threads.filter(t=>runtime(t.id).approvals.size).length,active=threads.filter(t=>runtime(t.id).running).length;
   const row=el('button',null,'metro-tile'),head=el('span',null,'workspace-identity'),marker=el('span',null,'tile-signal'),name=el('span',null,'workspace-label');
@@ -102,15 +104,21 @@ function renderHub(){
   row.onclick=()=>go(threads[0]??null,p.path,marker);
   grid.append(row)
  }
- if(!projects.length)grid.append(el('p','还没有项目。','empty-list'));
+ if(isEmpty){
+  const intro=el('div',null,'workbench-empty'),tile=el('span',null,'tile-signal'),copy=el('div');
+  tile.append(icon('folder'));copy.append(el('strong','还没有项目'),el('p','打开一个本地文件夹，从这里开始第一条会话。'));
+  intro.append(tile,copy);grid.append(intro);
+ }
  const running=data.threads.filter(t=>runtime(t.id).running).length;
  $('hubQueue').textContent=running?running+' 个运行中':'';
  for(const t of data.threads.slice(0,7)){
   const r=el('button',null,'rec-row'),s=runtime(t.id),status=s.approvals.size?'待审批':s.running?'运行中':t.stamp;
-  r.append(icon('chat'),el('strong',t.title),el('span',basename(t.folder),'rec-project'),el('time',status??'',s.running||s.approvals.size?'live-state':''));
+  const label=el('span',null,'recent-identity');
+  label.append(icon('chat'),el('strong',t.title));
+  r.append(label,el('span',basename(t.folder),'rec-project'),el('time',status??'',s.running||s.approvals.size?'live-state':''));
   r.onclick=()=>go(t);recent.append(r)
  }
- if(!recent.childElementCount)recent.append(el('p','还没有会话。','empty-list'));
+ $('hubRecentSection').hidden=!recent.childElementCount;
 }
 function addProject(p){if(!data.projects.some(x=>x.path===p))data.projects.unshift({path:p});authorized.add(p)}
 async function pickProject(s){
