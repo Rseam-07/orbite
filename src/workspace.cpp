@@ -18,7 +18,7 @@ const QString excludeAttachments = ":(top,exclude).orbit-attachments";
 CommandResult git(const QString &cwd, const QStringList &args, bool acceptDiff = false,
                   const QByteArray &input = {}, const QString &index = {}, int timeout = 10000)
 {
-    static const QString program = findTool("git");
+    const auto program = findTool("git");
     if (program.isEmpty())
         throw Failure("找不到 Git。");
     QStringList flags{"--no-pager", "-c", "core.fsmonitor=false", "-c", "core.hooksPath=/dev/null",
@@ -74,7 +74,7 @@ QString repositoryRoot(const QString &cwd)
 QString gitRoot(const QString &cwd)
 {
     const auto root = repositoryRoot(cwd);
-    if (root != cwd)
+    if (!samePath(root, cwd))
         throw Failure("请选择 Git 仓库根目录。");
     return root;
 }
@@ -101,7 +101,7 @@ QString baseFor(const Scope &scope)
 
 Scope readWorktree(const QString &root, const QString &space, const QString &common)
 {
-    if (canonicalDirectory(space) != space)
+    if (!samePath(canonicalDirectory(space), space))
         throw Failure("工作树资料目录无效。");
     QFile manifest(space + "/orbit.json");
     if (QFileInfo(manifest).isSymLink() || !manifest.open(QIODevice::ReadOnly) || manifest.size() > 32768)
@@ -109,9 +109,10 @@ Scope readWorktree(const QString &root, const QString &space, const QString &com
     const auto data = QJsonDocument::fromJson(manifest.readAll()).object();
     const auto base = data.value("base").toString();
     const auto cwd = space + "/checkout";
-    if (!validCommit(base) || data.value("common").toString() != common)
+    if (!validCommit(base) || !samePath(data.value("common").toString(), common))
         throw Failure("工作树记录与项目不匹配。");
-    if (canonicalDirectory(cwd) != cwd || gitRoot(cwd) != cwd || commonDirectory(cwd) != common)
+    if (!samePath(canonicalDirectory(cwd), cwd) || !samePath(gitRoot(cwd), cwd) ||
+        !samePath(commonDirectory(cwd), common))
         throw Failure("工作树目录与项目不匹配。");
     return {root, cwd, base, gitString(cwd, {"rev-parse", "--abbrev-ref", "HEAD"})};
 }
@@ -154,13 +155,14 @@ bool workspaceRelativePath(const QString &path)
 
 bool pathsOverlap(const QString &a, const QString &b)
 {
-    return !a.isEmpty() && !b.isEmpty() && (a == b || a.startsWith(b + "/") || b.startsWith(a + "/"));
+    return withinDirectory(a, b) || withinDirectory(b, a);
 }
 
 Scope openScope(const QString &root, const QString &profile, const QString &id,
                 bool isolated, bool create)
 {
-    if (canonicalDirectory(root) != root || root.isEmpty() || root == QDir::rootPath() || root == QDir::homePath())
+    if (root.isEmpty() || !samePath(canonicalDirectory(root), root) || QDir(root).isRoot() ||
+        samePath(root, canonicalDirectory(QDir::homePath())))
         throw Failure("项目目录不可用，请重新选择。");
     if (!isolated)
         return {root, root, {}, {}};
@@ -183,7 +185,7 @@ Scope openScope(const QString &root, const QString &profile, const QString &id,
 #endif
     if (!create)
         throw Failure("工作树会在连接此会话时创建。");
-    if (!QDir().mkpath(space) || canonicalDirectory(space) != space)
+    if (!QDir().mkpath(space) || !samePath(canonicalDirectory(space), space))
         throw Failure("无法准备工作树目录。");
 
     const auto manifestPath = space + "/orbit.json";
@@ -220,7 +222,7 @@ Scope openScope(const QString &root, const QString &profile, const QString &id,
 Review readReview(const Scope &scope)
 {
     const auto root = repositoryRoot(scope.cwd);
-    const auto prefix = root == scope.cwd ? QString() : QDir(root).relativeFilePath(scope.cwd);
+    const auto prefix = samePath(root, scope.cwd) ? QString() : QDir(root).relativeFilePath(scope.cwd);
     Review review;
     try {
         review.branch = gitString(scope.cwd, {"rev-parse", "--abbrev-ref", "HEAD"});
@@ -268,7 +270,7 @@ QString readPatch(const Scope &scope, const Change &file)
 
 Patch buildPatch(const Scope &scope)
 {
-    if (!validCommit(scope.base) || scope.root == scope.cwd)
+    if (!validCommit(scope.base) || samePath(scope.root, scope.cwd))
         throw Failure("请在独立工作树中交付改动。");
     gitRoot(scope.cwd);
     QTemporaryDir temporary;

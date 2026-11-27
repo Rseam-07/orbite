@@ -129,7 +129,7 @@ Attachment describeAttachment(const QString &path)
         (!file.isFile() && !file.isDir()))
         throw Failure("无法添加此附件：" + (name.isEmpty() ? path : name));
     const QString canonical = file.canonicalFilePath();
-    if (canonical.isEmpty() || canonical == QDir::rootPath() || canonical == QDir::homePath())
+    if (canonical.isEmpty() || QDir(canonical).isRoot() || samePath(canonical, canonicalDirectory(QDir::homePath())))
         throw Failure("请选择具体的文件或文件夹。");
     return {name, canonical, file.isDir(), file.isFile() ? file.size() : 0};
 }

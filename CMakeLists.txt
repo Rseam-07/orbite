@@ -3,11 +3,14 @@ if(APPLE)
     set(CMAKE_OSX_DEPLOYMENT_TARGET "12.0" CACHE STRING "Oldest supported macOS")
 endif()
 project(Orbite VERSION 0.8.0 LANGUAGES CXX)
-set(ORBITE_VERSION "${PROJECT_VERSION}-beta.1")
+set(ORBITE_VERSION "${PROJECT_VERSION}-beta.2")
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_AUTOMOC ON)
+if(MSVC)
+    add_compile_options(/utf-8)
+endif()
 
 find_package(Qt6 6.8 REQUIRED COMPONENTS Widgets Concurrent Sql)
 
@@ -31,11 +34,14 @@ set_target_properties(Orbite PROPERTIES
     MACOSX_BUNDLE_BUNDLE_VERSION "${PROJECT_VERSION}"
     MACOSX_BUNDLE_SHORT_VERSION_STRING "${PROJECT_VERSION}"
     MACOSX_BUNDLE_ICON_FILE Orbite.icns)
+set(version_file "${CMAKE_CURRENT_BINARY_DIR}/release-version.txt")
+file(GENERATE OUTPUT "${version_file}" CONTENT "${ORBITE_VERSION}\n")
 if(APPLE)
-    set(version_file "${CMAKE_CURRENT_BINARY_DIR}/release-version.txt")
-    file(GENERATE OUTPUT "${version_file}" CONTENT "${ORBITE_VERSION}\n")
     target_sources(Orbite PRIVATE assets/Orbite.icns "${version_file}")
     set_source_files_properties(assets/Orbite.icns "${version_file}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+elseif(WIN32)
+    target_sources(Orbite PRIVATE assets/Orbite.rc)
+    target_include_directories(Orbite PRIVATE assets)
 endif()
 install(TARGETS Orbite BUNDLE DESTINATION . RUNTIME DESTINATION bin)
 

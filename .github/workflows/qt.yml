@@ -3,13 +3,47 @@ name: Orbite Qt
 on:
   pull_request:
   push:
-    branches: [main]
+    branches: [main, 'codex/desktop-crossplatform']
   workflow_dispatch:
 
 permissions:
   contents: read
 
+concurrency:
+  group: orbite-qt-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@v4
+      - uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          archives: qtbase
+          cache: true
+      - name: Configure and build
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --parallel
+      - name: Verify the ACP client and Qt workbench
+        run: ctest --test-dir build --output-on-failure
+      - name: Create the x64 installer and portable ZIP
+        run: ./scripts/package-windows.ps1 -QtPrefix "$env:QT_ROOT_DIR" -BuildDirectory build -OutputDirectory dist
+      - name: Install and launch both packages
+        run: ./scripts/test-package-windows.ps1 -OutputDirectory dist -Version (Get-Content build/release-version.txt)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Orbite-Windows-x64
+          path: dist/Orbite-*
+          if-no-files-found: error
+
   macos:
     strategy:
       fail-fast: false
@@ -36,7 +70,10 @@ jobs:
         run: ctest --test-dir build --output-on-failure
       - name: Assemble an ad-hoc signed disk image
         run: scripts/package-macos.sh "$QT_ROOT_DIR" build dist
+      - name: Mount and launch the packaged application
+        run: bash scripts/test-package-macos.sh dist/Orbite-*.dmg ${{ matrix.arch }} "$(cat build/release-version.txt)"
       - uses: actions/upload-artifact@v4
         with:
           name: Orbite-macOS-${{ matrix.arch }}
           path: dist/Orbite-*.dmg*
+          if-no-files-found: error

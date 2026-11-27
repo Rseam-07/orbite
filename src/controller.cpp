@@ -68,10 +68,10 @@ QString Controller::driver()
 QString Controller::openProject(const QString &directory)
 {
     const auto root = canonicalDirectory(directory);
-    if (root.isEmpty() || root == QDir::rootPath() || root == QDir::homePath())
+    if (root.isEmpty() || QDir(root).isRoot() || samePath(root, canonicalDirectory(QDir::homePath())))
         throw Failure("请选择一个具体的项目目录。");
     for (const auto &project : std::as_const(projects_)) {
-        if (project.root == root) {
+        if (samePath(project.root, root)) {
             setSetting("unconfirmedProject/" + project.id, "");
             return project.id;
         }
@@ -223,7 +223,7 @@ QString Controller::projectRoot(const QString &project)
     const auto path = projects_.value(project).root;
     if (setting("unconfirmedProject/" + project) == "yes")
         throw Failure("这是从 0.7 导入的项目。首次使用前，请通过「打开项目」重新选择其目录。");
-    if (path.isEmpty() || canonicalDirectory(path) != path)
+    if (path.isEmpty() || !samePath(canonicalDirectory(path), path))
         throw Failure("项目目录不可用，请重新选择。");
     return path;
 }
@@ -781,7 +781,7 @@ int Controller::importRemote(const QString &projectId, const QList<RemoteThread>
     }
     int count = 0;
     for (const auto &session : sessions) {
-        if (session.root != path || session.id.isEmpty() || known.contains(session.id))
+        if (!samePath(session.root, path) || session.id.isEmpty() || known.contains(session.id))
             continue;
         Thread thread;
         thread.id = newId();

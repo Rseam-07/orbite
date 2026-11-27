@@ -5,9 +5,14 @@
 #include <QCommandLineParser>
 #include <QDir>
 #include <QFile>
+#include <QJsonDocument>
 #include <QLockFile>
 #include <QMessageBox>
+#include <QSaveFile>
 #include <QStandardPaths>
+#include <QSysInfo>
+#include <QTemporaryDir>
+#include <optional>
 
 int main(int argc, char **argv)
 {
@@ -24,10 +29,17 @@ int main(int argc, char **argv)
     parser.addVersionOption();
     QCommandLineOption profile("profile", "Use a separate local profile directory.", "directory");
     parser.addOption(profile);
+    QCommandLineOption verifyPackage("verify-package", "Verify the installed desktop runtime.", "report");
+    verifyPackage.setFlags(QCommandLineOption::HiddenFromHelp);
+    parser.addOption(verifyPackage);
     parser.addPositionalArgument("project", "Open this project in the workbench.", "[project]");
     parser.process(app);
 
-    const auto location = parser.isSet(profile) ? QDir(parser.value(profile)).absolutePath() :
+    std::optional<QTemporaryDir> verificationProfile;
+    if (parser.isSet(verifyPackage))
+        verificationProfile.emplace();
+    const auto location = verificationProfile ? verificationProfile->path() :
+                          parser.isSet(profile) ? QDir(parser.value(profile)).absolutePath() :
                           QStandardPaths::writableLocation(QStandardPaths::AppLocalDataLocation);
     try {
         if (location.isEmpty() || !QDir().mkpath(location))
@@ -42,10 +54,29 @@ int main(int argc, char **argv)
         if (!parser.positionalArguments().isEmpty())
             window.openPath(QDir(parser.positionalArguments().first()).absolutePath());
         window.show();
+        if (verificationProfile) {
+            data.setSetting("verification", app.applicationVersion());
+            QTimer::singleShot(0, &window, [&] {
+                const auto report = QJsonDocument(QJsonObject{
+                    {"version", app.applicationVersion()}, {"platform", app.platformName()},
+                    {"architecture", QSysInfo::buildCpuArchitecture()},
+                    {"databaseWritable", data.setting("verification") == app.applicationVersion()},
+                    {"windowVisible", window.windowHandle() && window.isVisible()}
+                }).toJson();
+                QSaveFile file(parser.value(verifyPackage));
+                const auto written = file.open(QIODevice::WriteOnly) && file.write(report) == report.size() &&
+                                     file.commit();
+                app.exit(written ? 0 : 1);
+            });
+        }
         const auto result = app.exec();
         controller.stopAll();
         return result;
     } catch (const orbite::Failure &error) {
+        if (verificationProfile) {
+            qCritical("%s", qPrintable(error.text));
+            return 1;
+        }
         QMessageBox message(QMessageBox::Critical, "Orbite", error.text, QMessageBox::Close);
         message.setTextFormat(Qt::PlainText);
         message.exec();

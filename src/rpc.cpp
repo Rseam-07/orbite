@@ -1,4 +1,5 @@
 #include "rpc.h"
+#include "common.h"
 
 #include <QJsonDocument>
 #include <QTimer>
@@ -8,6 +9,7 @@ namespace orbite {
 RpcProcess::RpcProcess(QObject *parent, qsizetype frameLimit)
     : QObject(parent), frameLimit_(frameLimit)
 {
+    configureBackgroundProcess(process_);
     connect(&process_, &QProcess::started, this, &RpcProcess::started);
     connect(&process_, &QProcess::readyReadStandardOutput, this, &RpcProcess::receive);
     connect(&process_, &QProcess::readyReadStandardError, this, [this] {
