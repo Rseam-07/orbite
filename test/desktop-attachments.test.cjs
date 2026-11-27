@@ -131,3 +131,20 @@ test('desktop distinguishes disconnect during copy from disconnect after handing
  assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
  await assert.rejects(api.prompt('example','work',[id]),/附件已失效/);
 });
+
+test('desktop never registers a trusted drop when the renderer declines the destination',async t=>{
+ const {api,tmp,drop,calls}=await desktop(t);
+ const folder=path.join(tmp,'fixture-folder');await fs.mkdir(folder);
+ let destination=null,prevented=false;
+ const added=new Promise((resolve,reject)=>api.onDrop(()=>destination,(files,id)=>resolve({files,id}),reject));
+ const event={isTrusted:true,dataTransfer:{files:[{selectedPath:folder}]},preventDefault(){prevented=true}};
+ drop()(event);
+ assert.equal(prevented,true,'blocked drops must not fall through to OS or browser navigation');
+ assert.deepEqual(calls,[]);
+ destination='conversation-B';
+ drop()(event);
+ const {files,id}=await added;
+ assert.equal(id,destination);
+ assert.equal(files[0].name,'fixture-folder');assert.equal(files[0].kind,'folder');
+ assert.deepEqual(calls,['drop']);
+});
