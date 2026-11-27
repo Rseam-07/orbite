@@ -125,23 +125,37 @@ function sidebar(show){
 }
 function opensSidebar(){sidebar(true);$('searchWrap').hidden=false;$('search').focus()}
 function renderSidebar(){
- const root=$('projects'),q=$('search').value.trim().toLowerCase();root.replaceChildren();
+ const root=$('projects'),q=$('search').value.trim().toLowerCase(),previous=document.activeElement;
+ const focusKey=root.contains(previous)?previous.dataset.focusKey:null;
+ const rows=document.createDocumentFragment(),scroll=root.scrollTop;
+ let nextFocus;
+ const track=(button,key)=>{
+  button.dataset.focusKey=key;
+  if(key===focusKey)nextFocus=button;
+ };
+
  const groups=data.projects.filter(p=>!q||basename(p.path).toLowerCase().includes(q)||data.threads.some(t=>t.folder===p.path&&t.title.toLowerCase().includes(q)));
  for(const p of groups){
   const group=el('section',null,'project-group'),row=el('div',null,'project-row');
   if(p.path===folder){row.classList.add('project-active');if(current)row.classList.add('has-thread')}
   const main=el('button',null,'project-title');main.title=p.path;main.textContent=basename(p.path);
+  track(main,'project:'+p.path);
   main.onclick=()=>go(data.threads.find(t=>t.folder===p.path)??null,p.path);
   const plus=el('button',null,'new-small');plus.title='在 '+basename(p.path)+' 新建会话';plus.setAttribute('aria-label',plus.title);plus.append(icon('plus'));plus.onclick=()=>go(null,p.path,null,true);
+  track(plus,'new:'+p.path);
   row.append(icon('folder'),main,plus);group.append(row);
   for(const t of data.threads.filter(t=>t.folder===p.path&&(!q||basename(p.path).toLowerCase().includes(q)||t.title.toLowerCase().includes(q)))){
    const b=el('button',null,'thread'+(current===t?' selected':''));b.title=t.title;
+   track(b,'thread:'+t.id);
    const st=runtime(t.id);const live=st.approvals.size?'待审批':st.running?'运行中':t.isolated?'工作树':'';
    b.append(el('span',t.title),el('time',live||t.stamp||'',live?'thread-status':''));b.onclick=()=>go(t);group.append(b);
   }
-  root.append(group);
+  rows.append(group);
  }
- if(!groups.length)root.append(el('div',q?'没有匹配的会话':'尚未打开项目','project-empty'));
+ if(!groups.length)rows.append(el('div',q?'没有匹配的会话':'尚未打开项目','project-empty'));
+ root.replaceChildren(rows);
+ root.scrollTop=scroll;
+ if(focusKey&&!app.classList.contains('no-side'))(nextFocus??($('searchWrap').hidden?$('searchBtn'):$('search'))).focus({preventScroll:true});
  $('projectName').textContent=view==='home'?'Orbite':basename(folder)||'Orbite';
  $('taskTitle').textContent=view==='home'?'工作台':current?.title||'新建会话';
  $('routeProject').textContent=basename(folder)||'会话';
