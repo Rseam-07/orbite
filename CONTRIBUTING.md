@@ -7,4 +7,6 @@
 
 `core.cjs` 和 `transport.cjs` 处理 ACP，`main.cjs` / `preload.cjs` 是 Electron 桥接，`ui.js` / `motion.js` / `style.css` 是界面，`test/` 是可离线运行的测试。电脑控制以用户授权为前提，不在测试里请求真实桌面权限。
 
+要从实际下载包验证三平台交互，使用[候选包验收清单](CANDIDATE-TESTING.md)。
+
 不要提交账户信息、令牌、私有项目路径、附带敏感数据的日志、附件副本或生成的 HTML 预览。截图和录屏也请先脱敏。
