@@ -252,7 +252,7 @@ dialog select { border:1px solid var(--edge); background:var(--bg); border-radiu
 .extension-heading { justify-content:flex-start; margin:10px 0 7px }
 .extension-icon { width:29px; height:29px; display:grid; place-items:center; background:var(--accent-soft); color:var(--accent); border-radius:3px }
 .cua-dialog { width:min(94vw,510px) }
-.cua-steps { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); margin:12px 0; border-block:1px solid var(--line) }
+.cua-steps { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); margin:12px 0; border-block:1px solid var(--line) }
 .cua-steps>div { padding:7px 6px; display:grid; gap:3px; min-width:0; border-right:1px solid var(--line) }
 .cua-steps>div:last-child { border-right:0 }
 .cua-steps span { color:var(--dim); font:9px var(--mono) }

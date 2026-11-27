@@ -598,7 +598,9 @@ function renderCua(){
  $('cuaGrant').disabled=locked||!cuaStatus?.mac||!driverSelected;
  $('cuaTest').disabled=locked||!cuaStatus?.mac||!driverSelected||cuaStatus?.permissions?.accessibility!==true||cuaStatus?.permissions?.screen!==true;
  $('useDriver').disabled=locked||(!s.extensionEnabled&&(!folder||!driverSelected||!cuaStatus?.mcp||Boolean(cuaStatus.mcp.missing.length)||!cuaStatus.mac||cuaStatus.permissions?.accessibility!==true||cuaStatus.permissions?.screen!==true));
- $('useDriver').checked=s.extensionEnabled;$('cuaDraft').disabled=locked||!folder||!s.extensionEnabled;
+ const canLink=cuaStatus?.mcp?.readonlyPermissions===true;
+ $('useDriver').checked=s.extensionEnabled;$('cuaDraft').disabled=locked||!folder||!s.extensionEnabled||!canLink;
+ $('cuaLinkState').textContent=!cuaStatus?.mcp?'未检测':!canLink?'无只读检查':!s.extensionEnabled?'未接入会话':'待验证';
  $('cuaDriverState').textContent=cuaStatus?(cuaStatus.mcp?('v'+cuaStatus.version+' · '+cuaStatus.mcp.tools+' tools'):(cuaStatus.found?'MCP 未就绪':'未安装')):'未检测';
  const perms=cuaStatus?.permissions;
  const mark=x=>x==null?'未知':x?'已开':'未开';
@@ -608,11 +610,13 @@ function renderCua(){
 async function probing(){
  if(cuaWorking)return;
  if(demo||!api){$('extNote').textContent='离线预览不会检测或操作本机。请在桌面版打开。';return}
- cuaWorking=true;renderCua();$('extensionStatus').textContent='正在检测…';
+ cuaWorking=true;cuaStatus=null;driverSelected=false;cuaTestResult=null;renderCua();$('extensionStatus').textContent='正在检测…';
  try{
   cuaStatus=await api.cuaProbe();driverSelected=Boolean(cuaStatus.found);
   $('extensionStatus').textContent=cuaStatus.mcp?'检测到 Cua Driver':cuaStatus.found?'需要检查驱动':'没有检测到驱动';
-  $('extNote').textContent=(cuaStatus.issues??[]).join('\n')||(cuaStatus.permissions?.source?'权限报告来自：'+cuaStatus.permissions.source:'');
+  const issues=[...(cuaStatus.issues??[])];
+  if(cuaStatus.mcp&&!cuaStatus.mcp.readonlyPermissions)issues.push('驱动未声明可用的只读权限检查，暂不能填入联调指令。');
+  $('extNote').textContent=issues.join('\n')||(cuaStatus.permissions?.source?'权限报告来自：'+cuaStatus.permissions.source:'');
  }catch(e){$('extensionStatus').textContent='检测未完成';notice(e)}
  finally{cuaWorking=false;renderCua()}
 }
@@ -645,10 +649,10 @@ $('useDriver').onchange=async()=>{
  if(key()===id){setStatus();renderCua();$('extNote').textContent=enabled?'将在该会话下一次连接时加载。再用下面的联调提示检查 Antigravity 能否看到它。':'下一次连接不再由 Orbite 加载，CLI 全局设置不变。'}
 };
 $('cuaDraft').onclick=async()=>{
- if(!runtime().extensionEnabled)return;
+ if($('cuaDraft').disabled||!runtime().extensionEnabled||cuaStatus?.mcp?.readonlyPermissions!==true)return;
  closeDlg('extensionDialog');
  if(view==='home')await go(current,folder,null,true);
- const d=draft();d.text+=(d.text.trim()?'\n\n':'')+'只调用 cua-driver MCP 的 check_permissions，传入 prompt:false。只报告权限状态，不截图、不点击、不授权；如果 MCP 不可用，明确说明，不用终端替代。';
+ const d=draft();d.text+=(d.text.trim()?'\n\n':'')+'只调用 cua-driver MCP 的 check_permissions，明确传入 JSON 参数 {"prompt": false}。只报告权限状态，不截图、不点击、不授权；如果 MCP 不可用，明确说明，不用终端替代。';
  $('prompt').value=d.text;$('prompt').focus({preventScroll:true});
 };
 document.querySelectorAll('[data-dismiss]').forEach(b=>b.onclick=()=>closeDlg(b.dataset.dismiss));

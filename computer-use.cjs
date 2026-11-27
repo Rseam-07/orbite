@@ -35,14 +35,18 @@ async function mcpInventory(exe,{args=['mcp'],cwd=os.homedir(),timeout=8000}={})
   const r=await m.call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'orbit-computer-use',version:'0.7.0'}},timeout);
   if(!VERSIONS.has(r?.protocolVersion)||!r.capabilities?.tools)throw new Error('MCP 握手未公布工具能力。');
   m.notify('notifications/initialized',{});
-  const names=new Set();let cursor;
+  const names=new Set();let cursor,readonlyPermissions=false;
   for(let i=0;i<5;i++){
    const t=await m.call('tools/list',cursor?{cursor}:{},timeout);
    if(!Array.isArray(t?.tools))throw new Error('MCP 工具列表无效。');
-   for(const tool of t.tools)if(typeof tool?.name==='string')names.add(tool.name);
+   for(const tool of t.tools)if(typeof tool?.name==='string'){
+    names.add(tool.name);
+    // The tool can request OS prompts by default. Require an advertised boolean switch.
+    if(tool.name==='check_permissions'&&tool.inputSchema?.properties?.prompt?.type==='boolean')readonlyPermissions=true;
+   }
    cursor=typeof t.nextCursor==='string'?t.nextCursor:null;if(!cursor)break;
   }
-  return {protocol:r.protocolVersion,tools:names.size,missing:required.filter(t=>!names.has(t)),server:String(r.serverInfo?.name??'').slice(0,64)};
+  return {protocol:r.protocolVersion,tools:names.size,missing:required.filter(t=>!names.has(t)),readonlyPermissions,server:String(r.serverInfo?.name??'').slice(0,64)};
  } finally{m.close()}
 }
 async function diagnose(file,platform=process.platform){
