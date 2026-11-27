@@ -40,7 +40,7 @@ let current=data.threads.find(x=>x.id===data.selected)||null,folder=current?.fol
 const authorized=new Set(demo?data.projects.map(x=>x.path):[]),drafts=new Map(),states=new Map(),incomingDrops=new Map();
 const demoOptions=[{id:'model',name:'模型（离线预览）',currentValue:'demo-model',options:[{value:'demo-model',name:'Gemini'}]},{id:'mode',name:'模式（离线预览）',currentValue:'default',options:[{value:'default',name:'默认'},{value:'plan',name:'计划'}]}];
 function runtime(id=key()){
- if(!states.has(id))states.set(id,{running:false,connecting:false,session:null,authState:null,options:demo?demoOptions:[],changeIndex:0,review:null,extensionEnabled:false,turns:new Map(),approvals:new Map(),plan:[],activity:[],turnTools:new Map(),demoTimer:0,error:'',status:'',isolatedReady:false,taskDiff:new Map(),diffMode:'workspace',steering:false,refreshSeq:0,dirtyText:false,flushFrame:0,offlineWhileRunning:false,commands:demo?[{name:'plan',description:'先制定计划'},{name:'compact',description:'压缩会话上下文'}]:[]});
+ if(!states.has(id))states.set(id,{running:false,connecting:false,session:null,authState:null,options:demo?demoOptions:[],reviewSelection:new Map(),review:null,extensionEnabled:false,turns:new Map(),approvals:new Map(),plan:[],activity:[],turnTools:new Map(),demoTimer:0,error:'',status:'',isolatedReady:false,taskDiff:new Map(),diffMode:'workspace',steering:false,refreshSeq:0,dirtyText:false,flushFrame:0,offlineWhileRunning:false,commands:demo?[{name:'plan',description:'先制定计划'},{name:'compact',description:'压缩会话上下文'}]:[]});
  return states.get(id);
 }
 function key(){return current?.id??'new:'+String(folder)}
@@ -341,20 +341,33 @@ function agentPatch(name,c){
  ].join('\n');
 }
 function renderReview(){
- $('reviewMode').value=runtime().diffMode;
+ const state=runtime(),mode=state.diffMode;
+ $('reviewMode').value=mode;
  $('reviewMode').options[0].textContent=current?.isolated?'工作树 · 相对起点':'工作区状态';
- $('branchWrap').hidden=!runtime().review?.branch;$('branch').textContent=runtime().review?.branch??'';
- const review=runtime().diffMode==='task'?{status:[...runtime().taskDiff.keys()].map(p=>' M '+p).join('\n'),patch:[...runtime().taskDiff].map(([p,c])=>agentPatch(p,c)).join('\n'),error:'当前会话还没有收到工具变更。'}:runtime().review;
+ $('branchWrap').hidden=!state.review?.branch;$('branch').textContent=state.review?.branch??'';
+ const review=mode==='task'?{status:[...state.taskDiff.keys()].map(p=>' M '+p).join('\n'),patch:[...state.taskDiff].map(([p,c])=>agentPatch(p,c)).join('\n'),error:'当前会话还没有收到工具变更。'}:state.review;
  const files=String(review?.status??'').split('\n').filter(x=>x.trim()).filter(x=>!x.slice(3).startsWith('.orbit-attachments/'));
  $('diffCount').hidden=!files.length;$('diffCount').textContent=files.length?String(files.length):'';
- const frame=$('changedFiles'),patch=$('patch');frame.replaceChildren();patch.replaceChildren();
- if(!files.length){frame.append(el('div',review?.error||'没有变更','ins-empty'));return}
+ const frame=$('changedFiles'),patch=$('patch');
+ const focused=frame.contains(document.activeElement)?document.activeElement.dataset.path:undefined;
+ frame.replaceChildren();patch.replaceChildren();
+ if(!files.length){frame.append(el('div',review?.error||'没有变更','ins-empty'));if(focused!==undefined)$('refresh').focus();return}
  const chunks=(review?.patch??'').split(/(?=^diff --git )/m).filter(Boolean);
- runtime().changeIndex=Math.min(runtime().changeIndex,files.length-1);
- for(const [i,f] of files.entries()){
-  const b=el('button',null,'file-row'+(i===runtime().changeIndex?' selected':''));b.append(icon('file'),el('span',f.slice(3)),el('code',f.slice(0,2).trim()));b.onclick=()=>{runtime().changeIndex=i;renderReview()};frame.append(b)
+ const remembered=state.reviewSelection.get(mode);
+ const selected=(files.find(f=>f.slice(3)===remembered)??files[0]).slice(3);
+ state.reviewSelection.set(mode,selected);
+ let activeRow,focusRow;
+ for(const f of files){
+  const path=f.slice(3),active=path===selected;
+  const b=el('button',null,'file-row'+(active?' selected':''));
+  b.dataset.path=path;
+  if(active){b.setAttribute('aria-current','true');activeRow=b}
+  if(path===focused)focusRow=b;
+  b.append(icon('file'),el('span',path),el('code',f.slice(0,2).trim()));
+  b.onclick=()=>{state.reviewSelection.set(mode,path);renderReview()};frame.append(b)
  }
- const selected=files[runtime().changeIndex]?.slice(3),name=selected?.split(' -> ').at(-1);
+ if(focused!==undefined)(focusRow??activeRow)?.focus({preventScroll:true});
+ const name=selected.split(' -> ').at(-1);
  const found=chunks.find(x=>x.split('\n')[0].endsWith(' b/'+name)||x.split('\n').includes('+++ b/'+name));
  if(!found){patch.append(el('div','这个文件没有可显示的文本补丁。','ins-empty'));return}
  const item=el('div',null,'patch-file'),sc=el('div',null,'scroll'),head=el('div',null,'patch-title'),follow=el('button','反馈此文件','secondary');
@@ -554,7 +567,7 @@ $('searchBtn').onclick=()=>{if(!$('searchWrap').hidden){$('searchWrap').hidden=t
 $('search').oninput=renderSidebar;
 $('openDiff').onclick=()=>reviewPanel($('body').dataset.review!=='open');
 $('closeDiff').onclick=()=>reviewPanel(false);$('refresh').onclick=scanProject;
-$('reviewMode').onchange=()=>{runtime().diffMode=$('reviewMode').value;runtime().changeIndex=0;renderReview()};
+$('reviewMode').onchange=()=>{runtime().diffMode=$('reviewMode').value;renderReview()};
 $('reveal').onclick=async()=>{try{await api.reveal(key())}catch(e){notice(e)}};
 $('exportPatch').onclick=async()=>{
  const id=key(),root=folder;
