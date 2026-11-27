@@ -67,7 +67,8 @@ function viewLayout(next){
 }
 function go(t,f,source=null,focus=false){
  if(runtime().connecting)return Promise.resolve();
- const anchor=source??(view==='home'?[...$('hubTiles').querySelectorAll('.metro-tile')].find(n=>n.dataset.project===(t?.folder??f??folder)):null);
+ const project=t?.folder??f??folder;
+ const anchor=source??(view==='home'?[...$('hubTiles').querySelectorAll('.metro-tile')].find(n=>n.dataset.project===project):null);
  const action=()=>{
   current=t;folder=t?.folder??f??folder;viewLayout('thread');persist();render();scanProject();renderActivity();
   if(!t)reviewPanel(false);
@@ -75,13 +76,13 @@ function go(t,f,source=null,focus=false){
   if(focus)$('prompt').focus({preventScroll:true});
   else $('routeTitle').focus({preventScroll:true});
  };
- return motion.scene(action,{source:anchor,target:()=>$('routeMarker'),content:()=>document.querySelector('.route-head')});
+ return motion.scene(action,{project,source:anchor,target:()=>$('routeMarker'),content:()=>document.querySelector('.route-head')});
 }
 function showHub(){
  if(runtime().connecting||view==='home')return;
  const path=folder;
  motion.scene(()=>{viewLayout('home');renderSidebar();$('hubTitle').focus({preventScroll:true})},{
-  direction:'back',source:$('routeMarker'),
+  direction:'back',project:path,source:$('routeMarker'),
   target:()=>[...$('hubTiles').querySelectorAll('.metro-tile')].find(n=>n.dataset.project===path)?.querySelector('.tile-signal'),
   content:()=>$('hubTiles')
  });

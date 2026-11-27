@@ -2,10 +2,10 @@
 window.OrbitMotion=(()=>{
  const reduce=matchMedia('(prefers-reduced-motion: reduce)');
  const ease='cubic-bezier(.18,.69,.27,1)';
- const navigation=new Set(),micro=new Set();let generation=0;
+ const navigation=new Set(),micro=new Set();let generation=0,activeTurn=null;
  function stop(clearView=true){
   for(const a of navigation)a.cancel();
-  navigation.clear();
+  navigation.clear();activeTurn=null;
   if(clearView)document.getElementById('scene')?.removeAttribute('data-turn');
  }
  function animate(node,frames,opts,group=micro){
@@ -25,14 +25,28 @@ window.OrbitMotion=(()=>{
   const sy=1-(1-p.sy)*s,sx=1-(1-p.sx)*s;
   return 'translate3d('+Math.round(p.x*x)+'px,'+Math.round(p.y*x)+'px,0) perspective(1250px) rotateY('+rotate+'deg) scale('+sx+','+sy+')';
  }
- function scene(change,{direction='forward',source=null,target=null,content=null}={}){
+ function finishTurn(turn,id,stage){
+  return turn.page.finished.catch(()=>{}).finally(()=>{
+   if(id!==generation)return;
+   stage.removeAttribute('data-turn');stop(false);
+  });
+ }
+ function scene(change,{direction='forward',source=null,target=null,content=null,project=null}={}){
   const id=++generation;
-  stop();
   const stage=document.getElementById('scene'),before=stage?.dataset.view;
   const can=!!stage&&!reduce.matches&&document.visibilityState!=='hidden'&&typeof Element.prototype.animate==='function';
+  const back=direction==='back',full=back?before==='thread':before==='home',turn=activeTurn;
+  // Reverse the existing effects from their current positions, not a route endpoint.
+  // Only reuse the flight path for the same project's tile.
+  if(can&&full&&turn&&turn.project===project&&turn.back!==back&&turn.page.playState==='running'){
+   turn.back=back;stage.dataset.turn=back?'back':'forward';
+   change();
+   turn.page.reverse();turn.hub.reverse();
+   return finishTurn(turn,id,stage);
+  }
+  stop();
   if(!can){change();return Promise.resolve()}
-  const back=direction==='back',surface=document.getElementById('body'),hub=document.getElementById('hub');
-  const full=back?before==='thread':before==='home';
+  const surface=document.getElementById('body'),hub=document.getElementById('hub');
   if(!full){change();const n=content?.();if(n)animate(n,[{opacity:.74,transform:'translate3d(7px,0,0)'},{opacity:1,transform:'translate3d(0,0,0)'}],{duration:130,easing:ease},navigation);return Promise.resolve()}
   const bounds=stage.getBoundingClientRect();
   const beforeTile=source?.querySelector('.tile-signal')??source;
@@ -50,15 +64,13 @@ window.OrbitMotion=(()=>{
    {transform:'translate3d(0,0,0) perspective(1250px) rotateY(0deg) scale(1)',offset:1}
   ];
   const page=animate(surface,opening,{duration:back?245:285,direction:back?'reverse':'normal',easing:ease,fill:'both'},navigation);
-  animate(hub,[
+  const hubFade=animate(hub,[
    {opacity:1,transform:'translate3d(0,0,0)',offset:0},
    {opacity:.90,transform:'translate3d(-8px,0,0)',offset:.31},
    {opacity:0,transform:'translate3d(-52px,0,0)',offset:1}
   ],{duration:back?230:255,direction:back?'reverse':'normal',easing:ease,fill:'both'},navigation);
-  return page.finished.catch(()=>{}).finally(()=>{
-   if(id!==generation)return;
-   stage.removeAttribute('data-turn');stop(false);
-  });
+  activeTurn={page,hub:hubFade,project,back};
+  return finishTurn(activeTurn,id,stage);
  }
  function enter(node,key='small'){
   if(!node||reduce.matches||typeof node.animate!=='function')return;
