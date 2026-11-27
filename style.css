@@ -218,6 +218,9 @@ textarea::placeholder { color:var(--dim) }
 .segment button.selected { border-bottom-color:var(--accent); color:var(--accent); font-weight:640 }
 #inspector section { flex:1; overflow:auto }
 .review-source { font-size:10px; padding:8px 8px 0 }
+.review-filter { display:flex; align-items:center; gap:8px; padding:4px 10px 0 }
+.review-filter input { min-width:0; flex:1; font:inherit; font-size:11px; color:var(--text); background:transparent; border:1px solid var(--edge); border-radius:5px; padding:5px 7px }
+#reviewMatches { flex-shrink:0; color:var(--muted); font-size:10px }
 #changedFiles { padding:6px 7px }
 .file-row { display:flex; width:100%; align-items:center; gap:5px; text-align:left; font:10.5px var(--mono); padding:5px; border-radius:4px }
 .file-row svg { width:13px; height:13px }
