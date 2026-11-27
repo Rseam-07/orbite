@@ -287,6 +287,10 @@ function buttons(){
  renderCua();
  document.querySelectorAll('#options select').forEach(n=>n.disabled=locked);
 }
+function clearEngineControls(id,s=runtime(id)){
+ s.controlRevision=(s.controlRevision??0)+1;s.options=[];s.commands=[];
+ if(id===key()){renderOptions();renderCommands()}
+}
 function renderOptions(){
  const root=$('options');root.replaceChildren();
  if(!runtime().options.length){root.append(el('span','Antigravity'));return}
@@ -295,7 +299,14 @@ function renderOptions(){
   if(!a.options.some(o=>o.value===a.currentValue)){const unknown=el('option','当前设置');unknown.value='';unknown.disabled=true;s.append(unknown)}
   for(const o of a.options){const n=el('option',o.name||o.value);n.value=o.value;s.append(n)}
   s.value=a.options.some(o=>o.value===a.currentValue)?a.currentValue:'';
-  s.onchange=async()=>{try{const id=key(),st=runtime();st.options=api?await api.configure(id,a.id,s.value):st.options.map(x=>x.id===a.id?{...x,currentValue:s.value}:x);if(id===key())renderOptions()}catch(e){notice(e);renderOptions()}};
+  s.onchange=async()=>{
+   const id=key(),st=runtime(id),revision=st.controlRevision;
+   try{
+    const options=api?await api.configure(id,a.id,s.value):st.options.map(x=>x.id===a.id?{...x,currentValue:s.value}:x);
+    if(st.controlRevision!==revision)return;
+    st.options=options;if(id===key())renderOptions();
+   }catch(e){if(st.controlRevision===revision&&id===key()){notice(e);renderOptions()}}
+  };
   root.append(s);
  }buttons()
 }
@@ -395,12 +406,13 @@ async function connect(allowAuth=false){
   s.connecting=false;s=runtime();s.connecting=true;
   const t=assigned(draft().isolated);id=t.id;s=runtime(id);
   if(demo){s.session='demo';s.isolatedReady=!!t.isolated;setStatus('',id);return true}
+  clearEngineControls(id,s);
   if(t.isolated&&!s.isolatedReady){setStatus('准备工作树…',id);await api.worktree(id,t.folder);s.isolatedReady=true}
   const c=allowAuth&&s.authState?.available?await api.authenticate(id):await api.connect(id,t.folder,t.remote??null,s.extensionEnabled,Boolean(t.isolated));
   if(c.auth){s.authState=c;settings();$('dialogStatus').textContent=c.available?'点「使用 Google 登录」继续。':'请先在终端运行 agy 完成 Google 登录，再点「连接」。';setStatus('待登录',id);return false}
   if(!c.session)throw new Error('连接未返回会话。');
   s.session=c.session;s.authState=null;t.remote=s.session;setStatus('',id);persist();return true;
- }catch(e){settings();notice(e);setStatus('待连接');return false}
+ }catch(e){if(!demo)clearEngineControls(id,s);settings();notice(e);setStatus('待连接');return false}
  finally{s.connecting=false;buttons()}
 }
 function finish(id,status){
@@ -416,7 +428,11 @@ function handle(e){
  const id=e.task??key(),s=runtime(id),t=data.threads.find(x=>x.id===id),visible=id===key();
  if(e.type==='commands'){s.commands=e.commands;if(visible)renderCommands();return}
  if(e.type==='config'){s.options=e.options??[];if(visible)renderOptions();return}
- if(e.type==='offline'||e.type==='sleep'){s.session=null;if(e.type==='offline'){s.error=e.text;s.offlineWhileRunning=s.running;finish(id,s.running?'disconnected':'cancelled')}else setStatus('',id);return}
+ if(e.type==='offline'||e.type==='sleep'){
+  s.session=null;s.authState=null;clearEngineControls(id,s);
+  if(e.type==='offline'){s.error=e.text;s.offlineWhileRunning=s.running;finish(id,s.running?'disconnected':'cancelled')}else setStatus('',id);
+  return;
+ }
  if(!s.running||!t)return;
  if(e.type==='delta'){
   if(!s.assistant){s.assistant={role:'assistant',text:''};t.messages.push(s.assistant)}
@@ -540,7 +556,13 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
 });
 $('setup').onclick=settings;
 $('auth').onclick=async()=>{if(demo){closeDlg('settings');return}if(await connect(true))closeDlg('settings')};
-$('selectExe').onclick=async()=>{try{if(api&&await api.executable()){$('cliText').textContent='已选用本机 agy。';runtime().session=null;runtime().authState=null;setStatus();settings()}}catch(e){notice(e)}};
+$('selectExe').onclick=async()=>{
+ const id=key(),s=runtime(id);
+ try{if(api&&await api.executable()){
+  $('cliText').textContent='已选用本机 agy。';s.session=null;s.authState=null;clearEngineControls(id,s);
+  if(id===key()){setStatus();settings()}
+ }}catch(e){if(id===key())notice(e)}
+};
 function renderCua(){
  const s=runtime(),locked=s.running||s.connecting||cuaWorking;
  $('cuaProbe').disabled=locked;$('chooseDriver').disabled=locked;
@@ -590,8 +612,8 @@ $('cuaTest').onclick=async()=>{
 $('useDriver').onchange=async()=>{
  const id=key(),s=runtime(id),enabled=$('useDriver').checked;
  try{if(api&&s.session)await api.disconnect(id)}catch(e){notice(e);renderCua();return}
- s.extensionEnabled=enabled;s.session=null;s.authState=null;s.options=[];
- if(key()===id){renderOptions();renderCua();$('extNote').textContent=enabled?'将在该会话下一次连接时加载。再用下面的联调提示检查 Antigravity 能否看到它。':'下一次连接不再由 Orbite 加载，CLI 全局设置不变。'}
+ s.extensionEnabled=enabled;s.session=null;s.authState=null;clearEngineControls(id,s);
+ if(key()===id){setStatus();renderCua();$('extNote').textContent=enabled?'将在该会话下一次连接时加载。再用下面的联调提示检查 Antigravity 能否看到它。':'下一次连接不再由 Orbite 加载，CLI 全局设置不变。'}
 };
 $('cuaDraft').onclick=async()=>{
  if(!runtime().extensionEnabled)return;
