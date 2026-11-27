@@ -2,7 +2,7 @@ const {execFile}=require('node:child_process');
 const fs=require('node:fs/promises');
 const p=require('node:path');
 function git(cwd,args,timeout=10000){
- return new Promise((resolve,reject)=>execFile('/usr/bin/git',['--no-pager','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',...args],{cwd,timeout,maxBuffer:4*1024*1024,env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('GIT_'))),GIT_TERMINAL_PROMPT:'0'}},(e,stdout,stderr)=>e?reject(new Error(stderr.trim()||e.message)):resolve(stdout)));
+ return new Promise((resolve,reject)=>execFile('/usr/bin/git',['--no-pager','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',...args],{cwd,timeout,maxBuffer:4*1024*1024,env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('GIT_'))),GIT_TERMINAL_PROMPT:'0'}},(e,stdout,stderr)=>e?reject(Object.assign(new Error(stderr.trim()||e.message),{exitCode:e.code})):resolve(stdout)));
 }
 const validId=id=>typeof id==='string'&&/^[-a-z0-9]{1,70}$/.test(id);
 const validCommit=s=>/^[0-9a-f]{40,64}$/.test(s);
@@ -31,14 +31,24 @@ async function worktree(root,task,storage){
  await fs.writeFile(manifest,JSON.stringify({common,base:head}),{mode:0o600,flag:'wx'});
  return {dir,base:head,isolated:true};
 }
+// Relative to the selected project (which can be a subfolder), not the Git top level.
+const NO_ATTACHMENT_COPIES=':(exclude,literal).orbit-attachments';
 async function review(cwd,base){
  const args=['-c','core.quotePath=false','diff','--no-ext-diff','--no-textconv','--no-color','--no-renames'];
  if(base&&!validCommit(base))throw new Error('无效的审阅基线');
  const [local,status,branch,patch]=await Promise.all([
-  base?git(cwd,[...args,'--name-status',base,'--']):Promise.resolve(''),
-  git(cwd,['-c','core.quotePath=false','status','--short','--untracked-files=normal','--no-renames']),
+  base?git(cwd,[...args,'--name-status',base,'--',NO_ATTACHMENT_COPIES]):Promise.resolve(''),
+  git(cwd,['--no-optional-locks','-c','core.quotePath=false','status','--short','--untracked-files=normal','--no-renames','--',NO_ATTACHMENT_COPIES]),
   git(cwd,['rev-parse','--abbrev-ref','HEAD']).catch(()=> ''),
-  git(cwd,[...args,base||'HEAD','--']).catch(e=>{if(base)throw e;return git(cwd,[...args,'--'])})
+  git(cwd,[...args,base||'HEAD','--',NO_ATTACHMENT_COPIES]).catch(async error=>{
+   if(base)throw error;
+   const hasHead=await git(cwd,['rev-parse','--verify','--quiet','HEAD']).then(()=>true,e=>{if(e.exitCode!==1)throw error;return false});
+   if(hasHead)throw error;
+   // Use Git's empty tree for this repository's object format without writing it.
+   const empty=(await git(cwd,['hash-object','-t','tree','/dev/null'])).trim();
+   if(!validCommit(empty))throw error;
+   return git(cwd,[...args,empty,'--',NO_ATTACHMENT_COPIES]);
+  })
  ]);
  const files=new Map(status.trimEnd().split('\n').filter(Boolean).map(s=>[s.slice(3),s]));
  for(const s of local.trimEnd().split('\n').filter(Boolean)){const [mode,file]=s.split('\t');if(file&&!files.has(file))files.set(file,mode.padEnd(2)+' '+file)}
@@ -47,8 +57,8 @@ async function review(cwd,base){
 async function exportPatch(cwd,base){
  if(!validCommit(base))throw new Error('没有有效的工作树基线。');
  const [patch,names]=await Promise.all([
-  git(cwd,['diff','--no-ext-diff','--no-textconv','--binary','--no-color',base,'--','.',':(exclude).orbit-attachments']),
-  git(cwd,['ls-files','--others','--exclude-standard','-z','--','.',':(exclude).orbit-attachments'])
+  git(cwd,['diff','--no-ext-diff','--no-textconv','--binary','--no-color',base,'--','.',NO_ATTACHMENT_COPIES]),
+  git(cwd,['ls-files','--others','--exclude-standard','-z','--','.',NO_ATTACHMENT_COPIES])
  ]);
  return {patch,untracked:names.split('\0').filter(Boolean).length};
 }
