@@ -61,6 +61,7 @@ function scanProject(){if(demo){
  renderReview();return
  }refresh()}
 function viewLayout(next){
+ if(view!==next){dragState(false);$('hubDropHint').textContent=''}
  view=next;$('scene').dataset.view=next;
  $('showHub').classList.toggle('active',next==='home');$('showHub').setAttribute('aria-pressed',String(next==='home'));
  $('openDiff').hidden=next==='home';
@@ -660,10 +661,23 @@ $('demoFolder').onchange=e=>{parseDemo(e.target.files,true);e.target.value=''};
 document.addEventListener('click',e=>{if(!e.target.closest('.attach-control'))attachMenu(false)});
 function fromFiles(e){return [...e.dataTransfer?.types??[]].includes('Files')}
 function dragState(on){$('dropBanner').hidden=!on;$('composer').classList.toggle('dragging',on)}
-document.addEventListener('dragover',e=>{if(!fromFiles(e))return;e.preventDefault();e.dataTransfer.dropEffect='copy';dragState(true)});
+function workbenchDropHint(){
+ const hint=$('hubDropHint');if(!hint.textContent)hint.textContent='请先打开目标会话，再拖入文件或文件夹。';
+}
+document.addEventListener('dragover',e=>{
+ if(!fromFiles(e))return;
+ e.preventDefault();
+ e.dataTransfer.dropEffect=view==='thread'?'copy':'none';
+ if(view==='thread')dragState(true);else workbenchDropHint();
+});
 document.addEventListener('dragleave',e=>{if(!e.relatedTarget)dragState(false)});
-document.addEventListener('drop',e=>{e.preventDefault();dragState(false);if(demo&&e.dataTransfer?.files.length)parseDemo(e.dataTransfer.files,false)});
+document.addEventListener('drop',e=>{
+ e.preventDefault();dragState(false);if(!e.dataTransfer?.files.length)return;
+ if(view!=='thread'){workbenchDropHint();return}
+ if(demo)parseDemo(e.dataTransfer.files,false);
+});
 $('send').onclick=send;$('stop').onclick=stop;$('scopeMode').onchange=()=>{draft().isolated=$('scopeMode').value==='worktree';$('scopeMode').title=draft().isolated?'从当前提交创建隔离工作树，不包含未提交改动':'直接在项目目录工作'};api?.onDrop(()=>{
+ if(view!=='thread'){workbenchDropHint();return null}
  const token=crypto.randomUUID();incomingDrops.set(token,{d:draft(),id:key()});return token;
 },(files,token)=>{
  const origin=incomingDrops.get(token);incomingDrops.delete(token);

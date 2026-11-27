@@ -93,6 +93,8 @@ kbd { font:10px var(--mono); color:var(--dim); white-space:nowrap }
 #hub { position:relative; overflow:auto; flex:1; min-height:0; min-width:0; background:var(--bg); scrollbar-width:thin }
 .hub-inner { width:min(100%,910px); margin:0 auto; padding:36px clamp(25px,4.2vw,55px) 40px }
 .hub-head { display:flex; align-items:center; justify-content:space-between; gap:10px; margin:0 0 27px }
+.hub-inner #hubDropHint { margin:0; color:var(--muted); font-size:12px }
+.hub-inner #hubDropHint:not(:empty) { margin:0 0 18px }
 .hub-head h1 { margin:0; font-size:25px; font-weight:650; letter-spacing:-.045em }
 .section-title { display:flex; align-items:baseline; gap:7px; padding-bottom:9px }
 .section-title h2 { margin:0; font-size:13px; font-weight:660 }
