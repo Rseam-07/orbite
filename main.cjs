@@ -76,10 +76,15 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
  try{
   await runner.init();if(runners.get(task)!==runner)throw new Error('连接已退出');
   runner.requestedSession=id??null;runner.extensions=mcp;
-  return {session:await runner.open(id??null,mcp)};
+  try{return {session:await runner.open(runner.requestedSession,mcp)}}
+  catch(e){
+   // ACP v1 auth_required is a protocol code; the agent may localize the message.
+   if(e.code===-32000&&runners.get(task)===runner)return {auth:true,available:runner.canAuthenticate};
+   throw e;
+  }
  }catch(e){
-  if(e.code===-32000&&/authenticat|登录/i.test(e.message))return {auth:true,available:runner.canAuthenticate};
-  close(task);throw e;
+  if(runners.get(task)===runner)close(task);
+  throw e;
  }finally{runner.connecting=false}
 });
 ipc('authenticate',async task=>{const r=get(task);r.connecting=true;try{await r.auth();if(r!==runners.get(task))throw new Error('连接已切换');return {session:await r.open(r.requestedSession,r.extensions)}}finally{r.connecting=false}});
