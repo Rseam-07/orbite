@@ -395,16 +395,18 @@ function settings(){
  if(!$('settings').open)$('settings').showModal();
 }
 async function authorize(){
- const was=folder;if(folder&&authorized.has(folder))return true;
- const prev=key(),oldDraft=draft(),p=await pickProject(folder);
- if(!p)return false;
- if(current&&p!==was){notice('要恢复原会话，请重新选它所属的项目。');return false}
- if(p!==was){folder=p;if(!drafts.has(key()))drafts.set(key(),oldDraft);drafts.delete(prev);render()}
- return true;
+ const was=folder;if(was&&authorized.has(was))return was;
+ const p=await pickProject(was);
+ if(!p)return null;
+ if(current&&p!==was){notice('要恢复原会话，请重新选它所属的项目。');return null}
+ return p;
 }
-function assigned(isolated=false){
+function assigned(isolated,target){
  if(current)return current;
+ // Move our draft directly to the new session. The chosen project's unassigned
+ // composer is a separate draft, even when the folder picker changes projects.
  const prev=key(),d=draft(),s=runtime();
+ folder=target;
  const text=d.text||'新建会话';
  current={id:crypto.randomUUID(),folder,title:[...text].slice(0,30).join(''),stamp:'刚刚',messages:[],isolated};
  data.threads.unshift(current);drafts.set(current.id,d);states.set(current.id,s);drafts.delete(prev);states.delete(prev);
@@ -415,9 +417,8 @@ async function connect(allowAuth=false){
  s.connecting=true;buttons();setStatus('连接中…');s.error='';$('dialogStatus').textContent='';
  let id=key();
  try{
-  if(!await authorize())return false;
-  s.connecting=false;s=runtime();s.connecting=true;
-  const t=assigned(draft().isolated);id=t.id;s=runtime(id);
+  const target=await authorize();if(!target)return false;
+  const t=assigned(draft().isolated,target);id=t.id;s=runtime(id);
   if(demo){s.session='demo';s.isolatedReady=!!t.isolated;setStatus('',id);return true}
   clearEngineControls(id,s);
   if(t.isolated&&!s.isolatedReady){setStatus('准备工作树…',id);await api.worktree(id,t.folder);s.isolatedReady=true}
