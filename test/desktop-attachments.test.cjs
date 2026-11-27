@@ -73,7 +73,7 @@ test('desktop Stop during attachment copy restores eligibility to send the same 
   async prompt(text,files){prompts.push({text,files})}
  }
  const {api,tmp,setPick}=await desktop(t,{Engine});
- const executable=path.join(tmp,'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
+ const executable=path.join(tmp,process.platform==='win32'?'agy.exe':'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
  await Promise.all([fs.writeFile(executable,'fixture (not executed)',{mode:0o700}),fs.mkdir(project),fs.writeFile(file,'draft')]);
  setPick({filePaths:[executable]});await api.executable();
  setPick({filePaths:[project]});await api.pick();
@@ -107,7 +107,7 @@ test('desktop distinguishes disconnect during copy from disconnect after handing
   }
  }
  const {api,tmp,setPick,events}=await desktop(t,{Engine:TestEngine});
- const executable=path.join(tmp,'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
+ const executable=path.join(tmp,process.platform==='win32'?'agy.exe':'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
  await Promise.all([fs.writeFile(executable,'fixture (not executed)',{mode:0o700}),fs.mkdir(project),fs.writeFile(file,'draft')]);
  setPick({filePaths:[executable]});await api.executable();
  setPick({filePaths:[project]});await api.pick();

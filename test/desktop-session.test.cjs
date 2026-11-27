@@ -13,7 +13,7 @@ test('desktop uses the ACP auth code during restore, not the error language',asy
   nativeTheme:{},dialog:{showOpenDialog:async()=>({filePaths:[selection]})},
   ipcMain:{handle:(name,fn)=>handlers.set(name,fn)}
  };
- const project=path.join(tmp,'project'),cli=path.join(tmp,'agy'),calls=[];
+ const project=path.join(tmp,'project'),cli=path.join(tmp,process.platform==='win32'?'agy.exe':'agy'),calls=[];
  await fs.mkdir(project);await fs.writeFile(cli,'fixture (not executed)',{mode:0o700});
  let selection=cli,initCode,openCode=-32000,canAuthenticate=true;
  const failure=code=>Object.assign(new Error('認証情報を入力してください'),{code});

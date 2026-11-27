@@ -2,6 +2,8 @@ const {app,BrowserWindow,ipcMain,dialog,nativeTheme,shell}=require('electron');
 const fs=require('node:fs');const path=require('node:path');const os=require('node:os');const {worktree,review,validId,exportPatch}=require('./workspace.cjs');
 const cua=require('./computer-use.cjs');
 const {Engine}=require('./core.cjs');
+const {findExecutable}=require('./executables.cjs');
+const isMac=process.platform==='darwin',agy=process.platform==='win32'?'agy.exe':'agy';
 const {registerPaths,stage,clipboardImage}=require('./attachments.cjs');
 const {randomUUID}=require('node:crypto');
 const attachments=new Map();
@@ -13,12 +15,9 @@ function forgetAttachment(id){
 }
 let win,cliPath,computerUsePath,cuaBusy=false;const roots=new Set(),runners=new Map(),scopes=new Map(),creating=new Set();
 function exe(){
- const n='agy';
- const dirs=['/opt/homebrew/bin','/usr/local/bin','/usr/bin',path.join(os.homedir(),'.local/bin'),path.join(os.homedir(),'.antigravity/bin'),...(process.env.PATH??'').split(path.delimiter)];
- for(const x of [cliPath,...dirs.filter(p=>path.isAbsolute(p)).map(p=>path.join(p,n))].filter(Boolean)){
-  try{if(fs.statSync(x).isFile()){fs.accessSync(x,fs.constants.X_OK);return x}}catch{}
- }
- throw new Error('未找到 '+n+'。请安装官方 CLI，或在这里选取它的可执行文件。');
+ const file=findExecutable('agy',cliPath);
+ if(file)return file;
+ throw new Error('未找到 '+agy+'。请安装官方 CLI，或在这里选取它的可执行文件。');
 }
 function ipc(name,run){ipcMain.handle(name,(e,...args)=>{if(e.senderFrame!==e.sender.mainFrame||e.sender!==win?.webContents)throw new Error('Invalid sender');return run(...args)})}
 function send(task,event){if(win&&!win.isDestroyed())win.webContents.send('engine-event',{...event,task})}
@@ -40,12 +39,12 @@ ipc('pick',async suggestion=>{
 });
 async function pickExecutable(allowed,title){
  const x=await dialog.showOpenDialog(win,{title,properties:['openFile']});if(x.canceled)return null;
- if(!allowed.includes(path.basename(x.filePaths[0])))throw new Error('请选择 '+allowed.join(' 或 ')+' 可执行文件。');
+ if(!allowed.includes(process.platform==='win32'?path.basename(x.filePaths[0]).toLowerCase():path.basename(x.filePaths[0])))throw new Error('请选择 '+allowed.join(' 或 ')+' 可执行文件。');
  const f=fs.realpathSync(x.filePaths[0]);if(!fs.statSync(f).isFile())throw new Error('不是普通文件');fs.accessSync(f,fs.constants.X_OK);return f;
 }
-ipc('executable',async()=>{const p=await pickExecutable(['agy'],'选择官方 agy 可执行文件');if(p)cliPath=p;return p?path.basename(p):null});
-ipc('computer-use',async()=>{const p=await pickExecutable(['cua-driver'],'选择已安装的 cua-driver');if(p)computerUsePath=p;return Boolean(p)});
-function driver(){return cua.executable(computerUsePath??'')??(computerUsePath=cua.findDriver())}
+ipc('executable',async()=>{const p=await pickExecutable([agy],'选择官方 '+agy+' 可执行文件');if(p)cliPath=p;return p?path.basename(p):null});
+ipc('computer-use',async()=>{if(!isMac)return false;const p=await pickExecutable(['cua-driver'],'选择已安装的 cua-driver');if(p)computerUsePath=p;return Boolean(p)});
+function driver(){return isMac?(cua.executable(computerUsePath??'')??(computerUsePath=cua.findDriver())):null}
 function guardCua(){
  if(cuaBusy)throw new Error('Computer Use 正在检查或自测。');
  if([...runners.values()].some(r=>r.extensions?.length&&(r.active||r.preparing)))throw new Error('先等正在使用桌面控制的会话完成。');
@@ -74,6 +73,7 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
  if(busy(runners.get(task)))throw new Error('当前会话正在运行。');
  const scope=isolated?scopes.get(task):{root,dir:root};
  if(!scope||scope.root!==root)throw new Error('请先准备工作树。');
+ if(enableExtension&&!isMac)throw new Error('Computer Use 目前仅支持 macOS。');
  if(enableExtension&&!driver())throw new Error('请先在扩展中选取已安装的 Cua Driver。');
  close(task);limit();
  const mcp=enableExtension?[{name:'cua-driver',command:computerUsePath,args:['mcp'],env:[]}]:[];
@@ -163,7 +163,10 @@ ipc('diff',async(task,root,isolated)=>{
  return review(scope.dir,scope.base);
 });
 // Keep the same profile across the Orbit → Orbite rename.
-const profileDir=path.join(app.getPath('appData'),'orbit-antigravity');
+// Packaging smoke tests a clean boot without opening a user's Orbite profile.
+const packageSmoke=app.isPackaged&&process.argv.includes('--orbite-package-smoke');
+const profileDir=packageSmoke?fs.mkdtempSync(path.join(os.tmpdir(),'orbite-smoke-')):path.join(app.getPath('appData'),'orbit-antigravity');
+if(packageSmoke)process.on('exit',()=>{try{fs.rmSync(profileDir,{recursive:true,force:true})}catch{}});
 fs.mkdirSync(profileDir,{recursive:true,mode:0o700});
 app.setPath('userData',profileDir);
 app.setPath('sessionData',profileDir);
@@ -176,7 +179,13 @@ if(!app.requestSingleInstanceLock())app.quit();else{
    webPreferences:{preload:path.join(__dirname,'preload.cjs'),contextIsolation:true,nodeIntegration:false,sandbox:true,webSecurity:true}});
   win.webContents.setWindowOpenHandler(()=>({action:'deny'}));
   win.webContents.on('will-navigate',e=>e.preventDefault());
-  win.loadFile('index.html',{query:{desktop:'1'}});
+  const loaded=win.loadFile(path.join(__dirname,'index.html'),{query:{desktop:'1'}});
+  if(packageSmoke){
+   const deadline=setTimeout(()=>app.exit(1),15000);
+   loaded.then(()=>win.webContents.executeJavaScript(
+    'window.orbit?.platform && document.body.classList.contains("is-desktop") && typeof render === "function" && !!document.querySelector("#showHub")'
+   )).then(ok=>{clearTimeout(deadline);app.exit(ok?0:1)},e=>{console.error(e);clearTimeout(deadline);app.exit(1)});
+  }
  });
  app.on('window-all-closed',()=>{attachments.clear();draftImageBytes=0;for(const task of runners.keys())close(task);app.quit()});
 }

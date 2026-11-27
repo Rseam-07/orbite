@@ -8,7 +8,8 @@ test('failed Finder batches leave no invisible attachment IDs and can be retried
  const dir=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'orbite-selection-'));
  t.after(()=>fs.rm(dir,{recursive:true,force:true}));
  const file=path.join(dir,'笔记.txt'),vanished=path.join(dir,'已移走.txt'),link=path.join(dir,'链接'),folder=path.join(dir,'示例目录');
- await Promise.all([fs.writeFile(file,'text'),fs.mkdir(folder),fs.symlink(file,link)]);
+ await Promise.all([fs.writeFile(file,'text'),fs.mkdir(folder)]);
+ await fs.symlink(folder,link,process.platform==='win32'?'junction':'dir');
  const registry=new Map([['older',file]]);
  await assert.rejects(registerPaths([file,vanished],registry),e=>e.message.includes('已移走.txt')&&!e.message.includes(dir));
  await assert.rejects(registerPaths([file,link],registry),/不支持符号链接/);

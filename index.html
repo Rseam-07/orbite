@@ -32,9 +32,9 @@
 <span class="grow"></span><span id="demoFlag" hidden>离线预览</span><button id="openDiff" class="toolbar-button" aria-expanded="false"><svg><use href="#i-pane"/></svg><span>审阅</span><span id="diffCount" hidden></span></button></header>
 <div id="scene" data-view="home"><section id="hub" aria-label="工作台">
 <div class="hub-inner"><header class="hub-head"><h1 id="hubTitle" tabindex="-1">工作台</h1><button id="hubOpen" class="secondary"><svg><use href="#i-plus"/></svg>打开项目</button></header>
-<div class="hub-section"><div class="section-title"><h2>项目</h2><span id="hubProjectCount"></span></div>
+<div id="hubProjects" class="hub-section"><div class="section-title"><h2>项目</h2><span id="hubProjectCount"></span></div>
 <div class="list-head"><span>名称</span><span>最近会话</span><span>状态</span></div><div id="hubTiles"></div></div>
-<div class="hub-recent"><div class="section-title"><h2>最近会话</h2><span id="hubQueue"></span></div><div id="hubRecents"></div></div>
+<div id="hubRecentSection" class="hub-recent"><div class="section-title"><h2>最近会话</h2><span id="hubQueue"></span></div><div id="hubRecents"></div></div>
 </div></section><div id="body" data-review="closed"><div id="conversation">
 <div class="route-head"><div id="routeMarker"></div><div><div class="route-index"><span id="routeProject">项目</span></div><h1 id="routeTitle" tabindex="-1">新建会话</h1></div></div>
 <section id="chat" aria-live="polite"><div id="timeline">
@@ -49,10 +49,10 @@
 <dialog id="settings"><header><h2>设置</h2><button class="icon" data-dismiss="settings" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header>
 <div class="setting-row"><div><b>Google 账户</b><small id="accountText">由 Antigravity CLI 登录和保存凭据。</small></div><button id="auth" class="secondary">连接</button></div>
 <div class="setting-row"><div><b>Antigravity CLI</b><small id="cliText">自动查找本机 agy。</small></div><button id="selectExe" class="secondary">选择 agy…</button></div>
-<div class="setting-row"><div><b>外观</b><small>可跟随 macOS 系统设置。</small></div><select id="theme" aria-label="外观"><option value="system">系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div><label class="setting-row check-row"><div><b>玻璃质感</b><small>关闭可减少静止面板的背景模糊。</small></div><input id="glassToggle" type="checkbox" checked></label><div id="dialogStatus" class="dialog-status" role="status"></div></dialog>
+<div class="setting-row"><div><b>外观</b><small>可跟随系统设置。</small></div><select id="theme" aria-label="外观"><option value="system">系统</option><option value="light">浅色</option><option value="dark">深色</option></select></div><label class="setting-row check-row"><div><b>玻璃质感</b><small>关闭可减少静止面板的背景模糊。</small></div><input id="glassToggle" type="checkbox" checked></label><div id="dialogStatus" class="dialog-status" role="status"></div></dialog>
 <dialog id="extensionDialog" class="cua-dialog"><header><h2>Computer Use</h2><button class="icon" data-dismiss="extensionDialog" aria-label="关闭"><svg><use href="#i-close"/></svg></button></header>
 <div class="extension-heading"><div class="extension-icon"><svg><use href="#i-pane"/></svg></div><div><b id="extensionStatus">尚未检测</b><small>本机 Cua Driver / Antigravity MCP</small></div></div>
-<div class="cua-steps"><div><span>01</span><strong>驱动</strong><b id="cuaDriverState">未检测</b></div><div><span>02</span><strong>辅助功能 / 录屏</strong><b id="cuaPermState">未检测</b></div><div><span>03</span><strong>后台输入</strong><b id="cuaTestState">未自测</b></div></div>
+<div class="cua-steps"><div><span>01</span><strong>驱动</strong><b id="cuaDriverState">未检测</b></div><div><span>02</span><strong>辅助功能 / 录屏</strong><b id="cuaPermState">未检测</b></div><div><span>03</span><strong>后台输入</strong><b id="cuaTestState">未自测</b></div><div><span>04</span><strong>反重力联调</strong><b id="cuaLinkState">未检测</b></div></div>
 <div class="cua-actions"><button class="secondary" id="cuaProbe">检测本机</button><button class="secondary" id="chooseDriver">手动选择…</button><button class="secondary" id="cuaDocs">安装说明</button><button class="secondary" id="cuaGrant" disabled>打开授权流程…</button><button class="secondary" id="cuaTest" disabled>运行官方自测</button></div>
 <p>检测不会截图。「官方自测」会读取一次屏幕，并在后台 TextEdit 测试输入，不保存测试文稿。自动控制只在你选中的会话启用。</p>
 <label class="setting-row check-row"><span>将 Cua Driver 接到当前会话</span><input id="useDriver" type="checkbox" disabled></label>
