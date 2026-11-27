@@ -601,7 +601,7 @@ function renderCua(){
  const canLink=cuaStatus?.mcp?.readonlyPermissions===true;
  $('useDriver').checked=s.extensionEnabled;$('cuaDraft').disabled=locked||!folder||!s.extensionEnabled||!canLink;
  $('cuaLinkState').textContent=!cuaStatus?.mcp?'未检测':!canLink?'无只读检查':!s.extensionEnabled?'未接入会话':'待验证';
- $('cuaDriverState').textContent=cuaStatus?(cuaStatus.mcp?('v'+cuaStatus.version+' · '+cuaStatus.mcp.tools+' tools'):(cuaStatus.found?'MCP 未就绪':'未安装')):'未检测';
+ $('cuaDriverState').textContent=cuaStatus?(cuaStatus.mcp?('v'+cuaStatus.version+' · '+cuaStatus.mcp.tools+' tools'):(cuaStatus.daemonRunning===false?'驱动未运行':cuaStatus.found?'MCP 未就绪':'未安装')):'未检测';
  const perms=cuaStatus?.permissions;
  const mark=x=>x==null?'未知':x?'已开':'未开';
  $('cuaPermState').textContent=perms?mark(perms.accessibility)+' / '+mark(perms.screen):cuaStatus&&!cuaStatus.mac?'需要 Mac':'未检测';
@@ -613,7 +613,7 @@ async function probing(){
  cuaWorking=true;cuaStatus=null;driverSelected=false;cuaTestResult=null;renderCua();$('extensionStatus').textContent='正在检测…';
  try{
   cuaStatus=await api.cuaProbe();driverSelected=Boolean(cuaStatus.found);
-  $('extensionStatus').textContent=cuaStatus.mcp?'检测到 Cua Driver':cuaStatus.found?'需要检查驱动':'没有检测到驱动';
+  $('extensionStatus').textContent=cuaStatus.mcp?'检测到 Cua Driver':cuaStatus.daemonRunning===false?'Cua Driver 未运行':cuaStatus.found?'需要检查驱动':'没有检测到驱动';
   const issues=[...(cuaStatus.issues??[])];
   if(cuaStatus.mcp&&!cuaStatus.mcp.readonlyPermissions)issues.push('驱动未声明可用的只读权限检查，暂不能填入联调指令。');
   $('extNote').textContent=issues.join('\n')||(cuaStatus.permissions?.source?'权限报告来自：'+cuaStatus.permissions.source:'');

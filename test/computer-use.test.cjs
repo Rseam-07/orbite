@@ -35,3 +35,17 @@ test('only a catalog with a boolean prompt argument enables the read-only permis
   assert.equal(x.readonlyPermissions,false);
  }
 });
+
+test('a stopped macOS daemon reports unknown permissions without launching MCP',{skip:process.platform==='win32'},async t=>{
+ const exe=await binary(t),marker=path.join(path.dirname(exe),'mcp-spawned');
+ const original=await fs.readFile(exe,'utf8');
+ const wrapper=original.replace("const cmd=process.argv.slice(2).join(' ');","const cmd=process.argv.slice(2).join(' ');\n"+
+  "if(cmd==='permissions status --json'){console.log(JSON.stringify({daemon_running:false,status:'unknown',reason:'sanitized fixture'}));process.exit(0)}\n"+
+  "if(cmd==='mcp')require('node:fs').writeFileSync("+JSON.stringify(marker)+",'spawned');");
+ await fs.writeFile(exe,wrapper);
+ const r=await diagnose(exe,'darwin');
+ assert.equal(r.found,true);assert.equal(r.daemonRunning,false);
+ assert.equal(r.permissions,null);assert.equal(r.mcp,null);
+ assert.match(r.issues[0],/未运行/);
+ await assert.rejects(fs.stat(marker),e=>e.code==='ENOENT');
+});
