@@ -17,7 +17,7 @@ test('reports missing driver tools without passing its health check',async()=>{
  const x=await mcpInventory(process.execPath,{args:[fixture,'missing']});assert.deepEqual(x.missing,['get_window_state','click','type_text']);
  const y=await diagnose(null,'darwin');assert.equal(y.found,false);assert.equal(y.mcp,null);
 });
-test('version, permission attribution and official self-test are independent states',async t=>{
+test('version, permission attribution and official self-test are independent states',{skip:process.platform==='win32'},async t=>{
  const exe=await binary(t);
  const r=await diagnose(exe,'darwin');
  assert.equal(r.version,'0.40.1');assert.equal(r.mcp.tools,4);

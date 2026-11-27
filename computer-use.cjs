@@ -47,6 +47,7 @@ async function mcpInventory(exe,{args=['mcp'],cwd=os.homedir(),timeout=8000}={})
 }
 async function diagnose(file,platform=process.platform){
  const out={mac:platform==='darwin',found:Boolean(file),mcp:null,permissions:null,version:null,issues:[]};
+ if(!out.mac)return {...out,found:false,issues:['Computer Use 目前仅支持 macOS。']};
  if(!file){out.issues.push('没有找到 cua-driver。请安装官方 Cua Driver 或手动选择。');return out}
  const ver=await run(file,['--version'],5000);
  const v=ver.stdout.match(/\b\d+\.\d+\.\d+(?:[-+.][\w.]+)?\b/)?.[0];
@@ -54,7 +55,7 @@ async function diagnose(file,platform=process.platform){
  else{out.issues.push('驱动无法运行或没有报告版本。请检查安装路径。');return out}
  const results=await Promise.allSettled([
   mcpInventory(file),
-  platform==='darwin'?run(file,['permissions','status','--json'],9000):Promise.resolve(null)
+  run(file,['permissions','status','--json'],9000)
  ]);
  if(results[0].status==='fulfilled')out.mcp=results[0].value;
  else out.issues.push('MCP 没有完成握手。驱动可能尚未启动、版本不兼容，或本机连接不可用。');
@@ -65,7 +66,6 @@ async function diagnose(file,platform=process.platform){
   else out.issues.push('驱动未返回可读的权限状态。');
  }else if(out.mac)out.issues.push('未能读取 macOS 权限状态。');
  if(out.mcp?.missing.length)out.issues.push('MCP 缺少必要工具：'+out.mcp.missing.join('、')+'。');
- if(!out.mac)out.issues.push('这不是 macOS；不能验证 Mac 的录屏或辅助功能权限。');
  return out;
 }
 async function selfTest(file,platform=process.platform){
