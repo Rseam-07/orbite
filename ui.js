@@ -340,7 +340,8 @@ function agentPatch(name,c){
   ...a.slice(endA,endA+Math.min(post,3)).map(t=>' '+t)
  ].join('\n');
 }
-function renderReview(){
+const reviewMatch=text=>text.normalize('NFC').toLowerCase();
+function renderReview({filterOnly=false}={}){
  const state=runtime(),mode=state.diffMode;
  $('reviewMode').value=mode;
  $('reviewMode').options[0].textContent=current?.isolated?'工作树 · 相对起点':'工作区状态';
@@ -348,16 +349,24 @@ function renderReview(){
  const review=mode==='task'?{status:[...state.taskDiff.keys()].map(p=>' M '+p).join('\n'),patch:[...state.taskDiff].map(([p,c])=>agentPatch(p,c)).join('\n'),error:'当前会话还没有收到工具变更。'}:state.review;
  const files=String(review?.status??'').split('\n').filter(x=>x.trim()).filter(x=>!x.slice(3).startsWith('.orbit-attachments/'));
  $('diffCount').hidden=!files.length;$('diffCount').textContent=files.length?String(files.length):'';
+ const filter=$('reviewFilter'),query=state.reviewFilters?.get(mode)??'';
+ if(filter.value!==query)filter.value=query;
+ const queryKey=reviewMatch(query.trim());
+ const matches=queryKey?files.filter(f=>reviewMatch(f.slice(3)).includes(queryKey)):files;
+ $('reviewMatches').textContent=queryKey?matches.length+' / '+files.length:'';
  const frame=$('changedFiles'),patch=$('patch');
  const focused=frame.contains(document.activeElement)?document.activeElement.dataset.path:undefined;
- frame.replaceChildren();patch.replaceChildren();
- if(!files.length){frame.append(el('div',review?.error||'没有变更','ins-empty'));if(focused!==undefined)$('refresh').focus();return}
- const chunks=(review?.patch??'').split(/(?=^diff --git )/m).filter(Boolean);
+ frame.replaceChildren();
+ if(!matches.length){
+  patch.replaceChildren();delete patch.dataset.path;
+  frame.append(el('div',files.length?'没有匹配的变更文件':review?.error||'没有变更','ins-empty'));
+  if(focused!==undefined)(files.length?filter:$('refresh')).focus();return;
+ }
  const remembered=state.reviewSelection.get(mode);
- const selected=(files.find(f=>f.slice(3)===remembered)??files[0]).slice(3);
- state.reviewSelection.set(mode,selected);
+ const selected=(matches.find(f=>f.slice(3)===remembered)??matches[0]).slice(3);
+ if(!queryKey)state.reviewSelection.set(mode,selected);
  let activeRow,focusRow;
- for(const f of files){
+ for(const f of matches){
   const path=f.slice(3),active=path===selected;
   const b=el('button',null,'file-row'+(active?' selected':''));
   b.dataset.path=path;
@@ -367,6 +376,9 @@ function renderReview(){
   b.onclick=()=>{state.reviewSelection.set(mode,path);renderReview()};frame.append(b)
  }
  if(focused!==undefined)(focusRow??activeRow)?.focus({preventScroll:true});
+ if(filterOnly&&patch.dataset.path===selected)return;
+ patch.replaceChildren();patch.dataset.path=selected;
+ const chunks=(review?.patch??'').split(/(?=^diff --git )/m).filter(Boolean);
  const name=selected.split(' -> ').at(-1);
  const found=chunks.find(x=>x.split('\n')[0].endsWith(' b/'+name)||x.split('\n').includes('+++ b/'+name));
  if(!found){patch.append(el('div','这个文件没有可显示的文本补丁。','ins-empty'));return}
@@ -567,6 +579,14 @@ $('searchBtn').onclick=()=>{if(!$('searchWrap').hidden){$('searchWrap').hidden=t
 $('search').oninput=renderSidebar;
 $('openDiff').onclick=()=>reviewPanel($('body').dataset.review!=='open');
 $('closeDiff').onclick=()=>reviewPanel(false);$('refresh').onclick=scanProject;
+const reviewFilter=$('reviewFilter');
+reviewFilter.oninput=()=>{
+ const state=runtime();(state.reviewFilters??=new Map()).set(state.diffMode,reviewFilter.value);
+ renderReview({filterOnly:true});
+};
+reviewFilter.addEventListener('keydown',e=>{
+ if(e.key==='Escape'&&reviewFilter.value){e.preventDefault();e.stopPropagation();reviewFilter.value='';reviewFilter.oninput()}
+});
 $('reviewMode').onchange=()=>{runtime().diffMode=$('reviewMode').value;renderReview()};
 $('reveal').onclick=async()=>{try{await api.reveal(key())}catch(e){notice(e)}};
 $('exportPatch').onclick=async()=>{
