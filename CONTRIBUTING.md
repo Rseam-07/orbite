@@ -1,10 +1,12 @@
-# 参与 Orbite 开发
+# 贡献指南
 
-1. 克隆仓库，在项目根目录运行 `npm ci`，用 `npm start` 启动桌面版。
-2. 从 `main` 创建主题分支；一次 Pull Request 聚焦一个改动。
-3. 提交前运行 `npm test`。如有 UI 改动，运行 `node build-preview.cjs`，并在 PR 附截图或短录屏，注明测试设备及系统版本。
-4. 请在 PR 说明改了什么、如何复现、哪些路径尚未验证。桌面输入、录屏或 Google 登录测试需要本机权限；未执行时请如实注明。
+用 [README](README.md#构建与打包) 的命令构建并运行测试。改动 ACP 或工作树时，优先通过真实子进程和临时 Git 仓库验证。
 
-`core.cjs` 和 `transport.cjs` 处理 ACP，`main.cjs` / `preload.cjs` 是 Electron 桥接，`ui.js` / `motion.js` / `style.css` 是界面，`test/` 是可离线运行的测试。电脑控制以用户授权为前提，不在测试里请求真实桌面权限。
+- `src/rpc.*` 负责 stdio JSON-RPC、帧大小、请求超时与断线处理。
+- `src/acp.*` 负责 Antigravity ACP 会话、模型选择、审批、流式事件与历史导入。
+- `src/controller.*` 负责界面与引擎间的会话生命周期、草稿队列、目录互斥和后台作业。
+- `src/profile.*` 负责本机 SQLite 资料库。Qt 版可用 `--profile <绝对路径>` 单独验证。
+- `src/workspace.*` 负责 Git 工作树、审阅、补丁及应用。打包入口在 `scripts/package-macos.sh`。
+- `src/window.*` 和 `src/review_panel.*` 是 Qt Widgets 界面。UI 测试通过这些正常入口操作窗口。
 
-不要提交账户信息、令牌、私有项目路径、附带敏感数据的日志、附件副本或生成的 HTML 预览。截图和录屏也请先脱敏。
+提交 Issue 时请注明系统、架构、Qt 或发行版本、`agy --version` 和复现步骤。会话记录、附件和本地凭据留在本机。

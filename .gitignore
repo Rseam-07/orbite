@@ -1,9 +1,10 @@
-node_modules/
-dist/
-out/
-coverage/
-Orbit-Preview.html
-Orbite-Preview.html
+/build/
+/build-*/
+/dist/
+/out/
+/CMakeUserPresets.json
+/.qt/
+/aqtinstall.log
 .DS_Store
 .env
 .env.*
