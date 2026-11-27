@@ -9,7 +9,7 @@ const basename=p=>p?.split(/[\\/]/).filter(Boolean).at(-1)||'';
 const storage=demo?'orbit07-preview':'orbit02-local';
 let data={projects:[],threads:[]};try{const d=JSON.parse(localStorage.getItem(storage)||'null');if(Array.isArray(d?.projects)&&Array.isArray(d?.threads))data=d}catch{}
 const sample='/Demo/Atelier';
-const sampleDiff={branch:'main',status:' M Sources/ImportList.swift\n M Tests/ImportListTests.swift',patch:`diff --git a/Sources/ImportList.swift b/Sources/ImportList.swift
+const sampleDiff={branch:'main',files:[{path:'Sources/ImportList.swift',status:'M',patch:`diff --git a/Sources/ImportList.swift b/Sources/ImportList.swift
 --- a/Sources/ImportList.swift
 +++ b/Sources/ImportList.swift
 @@ -34,4 +34,8 @@ func append(_ incoming: [URL]) {
@@ -19,15 +19,14 @@ const sampleDiff={branch:'main',status:' M Sources/ImportList.swift\n M Tests/Im
 +        guard seen.insert(key).inserted else { continue }
 +        items.append(url)
 +    }
- }
-diff --git a/Tests/ImportListTests.swift b/Tests/ImportListTests.swift
+ }`},{path:'Tests/ImportListTests.swift',status:'M',patch:`diff --git a/Tests/ImportListTests.swift b/Tests/ImportListTests.swift
 --- a/Tests/ImportListTests.swift
 +++ b/Tests/ImportListTests.swift
 @@ -14,3 +14,6 @@ struct ImportListTests {
 +    @Test func duplicateURLsAreIgnored() {
 +        #expect(importedURLs.count == 1)
 +    }
- }`};
+ }`}]};
 if(demo&&!data.projects.length){
  data={projects:[{path:sample},{path:'/Demo/NotesKit'}],threads:[
   {id:'sample-a',folder:sample,title:'修复导入列表的重复项',stamp:'刚刚',messages:[{role:'user',text:'导入同一个文件夹两次，列表里会出现重复项。按文件路径去重，保留原来的排序。',files:[{name:'ImportList.swift',kind:'file',size:4800},{name:'导入样例',kind:'folder'}]},{role:'assistant',text:'问题在导入合并时：第二批文件被直接追加。现在会用规范化路径去重，保留每个文件第一次出现的位置；不同目录下的同名文件仍会分别保留。\n\n改动在 `ImportList.swift`，并加了一个重复导入的回归测试。',status:'2 个文件有改动',tools:[{title:'读取 Sources/ImportList.swift',status:'completed'},{title:'修改 Sources/ImportList.swift',status:'completed'},{title:'补充 Tests/ImportListTests.swift',status:'completed'}]}]},
@@ -346,8 +345,7 @@ function renderReview(){
  $('reviewMode').options[0].textContent=current?.isolated?'工作树 · 相对起点':'工作区状态';
  $('branchWrap').hidden=!state.review?.branch;$('branch').textContent=state.review?.branch??'';
  const taskMode=mode==='task',review=state.review;
- const files=taskMode?[...state.taskDiff.keys()].map(path=>({path,status:'M'})):
-  String(review?.status??'').split('\n').filter(x=>x.trim()).map(x=>({path:x.slice(3),status:x.slice(0,2).trim()}));
+ const files=taskMode?[...state.taskDiff.keys()].map(path=>({path,status:'M'})):(review?.files??[]);
  const visibleFiles=files.filter(f=>!f.path.startsWith('.orbit-attachments/'));
  $('diffCount').hidden=!visibleFiles.length;$('diffCount').textContent=visibleFiles.length?String(visibleFiles.length):'';
  const frame=$('changedFiles'),patch=$('patch');
@@ -368,14 +366,7 @@ function renderReview(){
   b.onclick=()=>{state.reviewSelection.set(mode,path);renderReview()};frame.append(b)
  }
  if(focused!==undefined)(focusRow??activeRow)?.focus({preventScroll:true});
- let lines;
- if(taskMode){const change=state.taskDiff.get(selected);if(change)lines=agentPatchLines(change)}
- else {
-  const name=selected.split(' -> ').at(-1);
-  const chunks=(review?.patch??'').split(/(?=^diff --git )/m).filter(Boolean);
-  const found=chunks.find(x=>x.split('\n')[0].endsWith(' b/'+name)||x.split('\n').includes('+++ b/'+name));
-  lines=found?.split('\n');
- }
+ const lines=taskMode?agentPatchLines(state.taskDiff.get(selected)):visibleFiles.find(f=>f.path===selected)?.patch?.split('\n');
  if(!lines){patch.append(el('div','这个文件没有可显示的文本补丁。','ins-empty'));return}
  const item=el('div',null,'patch-file'),sc=el('div',null,'scroll'),head=el('div',null,'patch-title'),follow=el('button','反馈此文件','secondary');
  head.append(el('span',selected),follow);item.append(head,sc);
