@@ -87,3 +87,27 @@ test('review from a repository subfolder excludes only its own generated attachm
  assert.doesNotMatch(status,/\.orbit-attachments/);assert.doesNotMatch(patch,/generated attachment/);
  assert.match(status,/资料\.txt/);assert.match(patch,/sibling edit/);
 });
+
+test('workspace review includes staged and working edits before the first commit without writing the index',async t=>{
+ const source=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbite-unborn-review-'));
+ t.after(()=>fs.rm(source,{force:true,recursive:true}));
+ await git(source,['init','-q']);
+ await fs.writeFile(p.join(source,'staged.txt'),'staged content\n');
+ await fs.writeFile(p.join(source,'edited.txt'),'staged previous version\n');
+ await fs.mkdir(p.join(source,'.orbit-attachments'));
+ await fs.writeFile(p.join(source,'.orbit-attachments','nested.txt'),'attachment contents\n');
+ await git(source,['add','--','.']);
+ await fs.writeFile(p.join(source,'edited.txt'),'working copy content\n');
+ await fs.writeFile(p.join(source,'untracked.txt'),'untracked contents\n');
+ const index=p.join(source,'.git','index'),before=await fs.readFile(index);
+ const r=await review(source);
+ assert.match(r.status,/A  staged\.txt/);
+ assert.match(r.status,/AM edited\.txt/);
+ assert.match(r.status,/\?\? untracked\.txt/);
+ assert.match(r.patch,/^\+staged content$/m);
+ assert.match(r.patch,/^\+working copy content$/m);
+ assert.doesNotMatch(r.patch,/staged previous version|untracked contents|attachment contents|\.orbit-attachments/);
+ assert.deepEqual(await fs.readFile(index),before);
+ await assert.rejects(git(source,['rev-parse','--verify','HEAD']));
+ await assert.rejects(review(source,'1'.repeat(40)));
+});
