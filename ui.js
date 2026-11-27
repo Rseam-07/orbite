@@ -44,8 +44,49 @@ function runtime(id=key()){
  return states.get(id);
 }
 function key(){return current?.id??'new:'+String(folder)}
-function draft(){if(!drafts.has(key()))drafts.set(key(),{text:'',files:[],isolated:false});return drafts.get(key())}
-function persist(){clearTimeout(saveTimer);saveTimer=0;try{localStorage.setItem(storage,JSON.stringify({...data,threads:data.threads.slice(0,80),selected:current?.id??null}))}catch{}}
+const draftCap=20,draftTextLimit=100000,draftBudget=256000;
+let draftClock=0;
+function makeDraft(value=''){
+ return {files:[],isolated:false,touched:++draftClock,get text(){return value},set text(text){
+  if(text===value)return;
+  value=text;this.touched=++draftClock;if(api&&!demo)scheduleSave();
+ }};
+}
+function allowedDrafts(threads){
+ return new Set(['new:null',...threads.map(x=>x.id),...data.projects.map(x=>'new:'+x.path)]);
+}
+if(api&&!demo){
+ const allowed=allowedDrafts(data.threads.slice(0,80));let remaining=draftBudget;
+ const saved=Array.isArray(data.textDrafts)?data.textDrafts.slice(0,draftCap):[];
+ for(const row of saved.reverse()){
+  if(!Array.isArray(row)||row.length!==2)continue;
+  const [id,text]=row;
+  if(!allowed.has(id)||typeof text!=='string'||!text.trim()||text.length>draftTextLimit)continue;
+  remaining-=JSON.stringify([id,text]).length;if(remaining<0)break;
+  drafts.set(id,makeDraft(text));
+ }
+ for(const thread of data.threads)if(Array.isArray(thread.messages)){
+  for(const msg of thread.messages)if(msg?.role==='user'&&(msg.pendingDelivery==='turn'||msg.pendingDelivery==='steer')){
+   msg.status=msg.pendingDelivery==='steer'?'上次关闭 · 未确认追加结果':'上次关闭 · 未确认执行结果';delete msg.pendingDelivery;
+  }
+ }
+}
+function draft(){if(!drafts.has(key()))drafts.set(key(),makeDraft());return drafts.get(key())}
+function persist(){
+ clearTimeout(saveTimer);saveTimer=0;
+ const threads=data.threads.slice(0,80),textDrafts=[],allowed=allowedDrafts(threads);
+ let remaining=draftBudget;
+ if(api&&!demo){
+  for(const [id,d] of [...drafts.entries()].sort((a,b)=>b[1].touched-a[1].touched)){
+   if(!allowed.has(id)||!d.text.trim()||d.text.length>draftTextLimit)continue;
+   const entry=[id,d.text],length=JSON.stringify(entry).length;
+   if(length>remaining)continue;
+   textDrafts.push(entry);remaining-=length;if(textDrafts.length>=draftCap)break;
+  }
+ }
+ // Persist only text, never attachment IDs/bytes, extension approvals or an executable retry.
+ try{localStorage.setItem(storage,JSON.stringify({...data,threads,textDrafts,selected:current?.id??null}))}catch{}
+}
 function scheduleSave(){if(!saveTimer)saveTimer=setTimeout(persist,350)}
 window.addEventListener('pagehide',persist);
 function plain(t){return String(t||'').replace(/^Error invoking remote method '[^']+': Error: /,'').trim()}
@@ -227,7 +268,22 @@ function message(m){
  if(m.files?.length){const files=el('div',null,'chips');files.append(...m.files.map(f=>chip(f,false)));body.append(files)}
  const t=el('div',null,'text');textParts(t,m.text);body.append(t);root.append(body);
  if(m.tools?.length)root.append(toolDetails(m.tools));
- if(m.status){const strip=el('div',null,'action-strip');strip.append(icon('check'),el('span',m.status));root.append(strip)}
+ if(m.status){
+  const strip=el('div',null,'action-strip');
+  if(!user)strip.append(icon('check'));
+  strip.append(el('span',m.status));
+  if(user&&typeof m.recoverText==='string'){
+   const recover=el('button','加回草稿','secondary');
+   recover.onclick=()=>{
+    const d=draft(),prompt=$('prompt');
+    d.text+= (d.text?'\n\n':'')+m.recoverText;
+    delete m.recoverText;recover.remove();
+    prompt.value=d.text;renderCommands();prompt.focus();prompt.setSelectionRange(d.text.length,d.text.length);persist();
+   };
+   strip.append(recover);
+  }
+  root.append(strip)
+ }
  return root;
 }
 function renderChat(){
@@ -474,7 +530,8 @@ async function send(){
  }
  const t=current,id=t.id,local=d;s=runtime(id);
  local.text='';local.files=[];s.error='';s.approvals.clear();s.assistant=null;
- const user={role:'user',text,files:files.map(({name,kind,size,clipboard})=>({name,kind,size,clipboard}))};t.messages.push(user);
+ const user={role:'user',text,files:files.map(({name,kind,size,clipboard})=>({name,kind,size,clipboard}))};
+ if(!demo)user.pendingDelivery='turn';t.messages.push(user);
  s.submitting=!demo;
  s.offlineWhileRunning=false;s.turnTools.clear();s.running=true;setStatus(demo?'预览运行中':'正在执行',id);render();persist();
  try{
@@ -486,6 +543,7 @@ async function send(){
    if(result?.notSent||result?.uncertain)throw Object.assign(new Error(result.message),{notSent:result.notSent,uncertain:result.uncertain});
   }
  }catch(e){
+  delete user.pendingDelivery;
   const disconnected=!e.notSent&&(s.offlineWhileRunning||e.uncertain);
   if(disconnected){user.status='连接中断 · 未确认执行结果';s.error=(s.error||plain(e.message))+' 没有自动重发。重试之前请检查审阅面板。';}
   else {
@@ -493,13 +551,13 @@ async function send(){
    if(!local.text)local.text=original;local.files.unshift(...files);s.error=plain(e.message);
   }
   finish(id,disconnected?'disconnected':e.notSent?'not_sent':'failed');if(key()===id)render();
- }finally{s.submitting=false;if(key()===id)buttons()}
+ }finally{if(user.pendingDelivery){delete user.pendingDelivery;persist()}s.submitting=false;if(key()===id)buttons()}
 }
 async function steer(){
- const id=key(),s=runtime(id),t=current,d=draft(),text=d.text.trim();
+ const id=key(),s=runtime(id),t=current,d=draft(),original=d.text,text=original.trim();
  if(!s.running||!text||s.steering)return;
  if(d.files.length){notice('运行中只补充文字。附件会留在草稿里，等下一轮再送。');return}
- s.steering=true;s.assistant=null;d.text='';const m={role:'user',text,status:'追加指令'};t.messages.push(m);render();persist();
+ s.steering=true;s.assistant=null;d.text='';const m={role:'user',text,status:'追加指令'};if(!demo)m.pendingDelivery='steer';t.messages.push(m);render();persist();
  try{
   if(demo){handle({task:id,type:'delta',text:'（预览）已收到你的追加指令。审批仍可在本会话里处理。'})}
   else {
@@ -507,10 +565,15 @@ async function steer(){
    if(result?.uncertain)throw Object.assign(new Error(result.message),{uncertain:true});
   }
  }catch(e){
+  delete m.pendingDelivery;
   if(e.uncertain||s.offlineWhileRunning){m.status='连接中断 · 未确认追加结果';s.error=plain(e.message)+' 没有自动重发。'}
-  else {t.messages=t.messages.filter(x=>x!==m);if(!d.text)d.text=text;s.error=plain(e.message)}
+  else {
+   if(d.text){m.status='未发送 · 追加指令';m.recoverText=original}
+   else {t.messages=t.messages.filter(x=>x!==m);d.text=original}
+   s.error=plain(e.message)
+  }
   persist();
- }finally{s.steering=false;if(key()===id)render()}
+ }finally{if(m.pendingDelivery){delete m.pendingDelivery;persist()}s.steering=false;if(key()===id)render()}
 }
 async function stop(){
  const id=key(),s=runtime(id);if(!s.running)return;
