@@ -89,7 +89,10 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
   try{return {session:await runner.open(runner.requestedSession,mcp)}}
   catch(e){
    // ACP v1 auth_required is a protocol code; the agent may localize the message.
-   if(e.code===-32000&&runners.get(task)===runner)return {auth:true,available:runner.canAuthenticate};
+   if(e.code===-32000&&runners.get(task)===runner){
+    runner.awaitingAuth=true;
+    return {auth:true,available:runner.canAuthenticate};
+   }
    throw e;
   }
  }catch(e){
@@ -97,7 +100,19 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
   throw e;
  }finally{runner.connecting=false}
 });
-ipc('authenticate',async task=>{const r=get(task);r.connecting=true;try{await r.auth();if(r!==runners.get(task))throw new Error('连接已切换');return {session:await r.open(r.requestedSession,r.extensions)}}finally{r.connecting=false}});
+ipc('authenticate',async task=>{
+ const r=get(task);
+ if(busy(r))throw new Error('当前会话正在连接或运行，请稍候。');
+ if(!r.awaitingAuth)throw new Error('此会话没有待处理的登录请求。');
+ if(!r.canAuthenticate)throw new Error('请在终端运行 agy 完成 Google 登录，再回到 Orbite。');
+ r.connecting=true;
+ try{
+  await r.auth();if(r!==runners.get(task))throw new Error('连接已切换');
+  const session=await r.open(r.requestedSession,r.extensions);
+  r.awaitingAuth=false;
+  return {session};
+ }finally{r.connecting=false}
+});
 ipc('configure',(task,id,value)=>get(task).configure(id,value));
 ipc('attach',(kind)=>{if(!['file','folder'].includes(kind))throw new Error('未知附件类型');
  return dialog.showOpenDialog(win,{title:'添加到下一条消息',properties:[kind==='file'?'openFile':'openDirectory','multiSelections']}).then(a=>a.canceled?[]:registerPaths(a.filePaths,attachments));
