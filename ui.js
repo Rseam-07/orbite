@@ -272,11 +272,11 @@ function queueStream(s,id){
 
 function render(){renderSidebar();renderChat();$('prompt').value=draft().text;renderAttachments();renderOptions();renderCommands();setStatus();buttons();bottom()}
 function buttons(){
- const s=runtime(),locked=s.running||s.connecting;
+ const s=runtime(),locked=s.running||s.connecting||s.submitting;
  $('auth').disabled=locked;$('selectExe').disabled=locked;$('folder').disabled=s.connecting;$('new').disabled=s.connecting;$('send').disabled=runtime().connecting||(!demo&&!api);$('sendIcon').setAttribute('href',runtime().running?'#i-stop':'#i-up');
  $('send').setAttribute('aria-label',s.running?'追加指令':'发送');$('send').title=s.running?'追加指令（⌘↵）':'发送（⌘↵）';
  $('sendIcon').setAttribute('href','#i-up');
- $('send').disabled=s.connecting||s.steering||draft().pasting||(!demo&&!api);
+ $('send').disabled=s.connecting||s.steering||(!s.running&&s.submitting)||draft().pasting||(!demo&&!api);
  $('stop').hidden=!s.running;$('composer').classList.toggle('is-running',s.running);
  $('scopeMode').hidden=!folder;
  $('scopeMode').value=(current?.isolated??draft().isolated)?'worktree':'local';
@@ -387,7 +387,7 @@ function assigned(isolated=false){
  persist();render();return current;
 }
 async function connect(allowAuth=false){
- let s=runtime();if(s.session)return true;if(s.connecting||!demo&&!api)return false;
+ let s=runtime();if(s.session)return true;if(s.connecting||s.submitting||!demo&&!api)return false;
  s.connecting=true;buttons();setStatus('连接中…');s.error='';$('dialogStatus').textContent='';
  let id=key();
  try{
@@ -404,7 +404,7 @@ async function connect(allowAuth=false){
  finally{s.connecting=false;buttons()}
 }
 function finish(id,status){
- const s=runtime(id),labels={end_turn:'',cancelled:'已停止',refusal:'请求未执行',disconnected:'连接中断',max_tokens:'达到输出上限'};
+ const s=runtime(id),labels={end_turn:'',cancelled:'已停止',refusal:'请求未执行',disconnected:'连接中断',not_sent:'未发送，可重新连接后重试',max_tokens:'达到输出上限'};
  if(s.flushFrame){cancelAnimationFrame(s.flushFrame);s.flushFrame=0}
  const t=data.threads.find(x=>x.id===id),ops=[...s.turnTools.values()].slice(-20);
  if(ops.length&&t){if(s.assistant)s.assistant.tools=ops;else t.messages.push({role:'assistant',text:'',tools:ops})}
@@ -434,6 +434,7 @@ function handle(e){
 async function send(){
  let s=runtime();if(s.connecting||draft().pasting)return;
  if(s.running){await steer();return}
+ if(s.submitting)return;
  const d=draft(),original=d.text,files=d.files.slice();
  if(files.length>16){notice('每条消息最多发送 16 个附件。请先移除多余附件。');return}
  const text=original.trim()||(files.length?'请查看这些附件。':'');if(!text)return;
@@ -445,6 +446,7 @@ async function send(){
  const t=current,id=t.id,local=d;s=runtime(id);
  local.text='';local.files=[];s.error='';s.approvals.clear();s.assistant=null;
  const user={role:'user',text,files:files.map(({name,kind,size,clipboard})=>({name,kind,size,clipboard}))};t.messages.push(user);
+ s.submitting=!demo;
  s.offlineWhileRunning=false;s.turnTools.clear();s.running=true;setStatus(demo?'预览运行中':'正在执行',id);render();persist();
  try{
   if(demo){
@@ -452,17 +454,17 @@ async function send(){
    s.demoTimer=setTimeout(()=>handle({task:id,type:'approval',key:'preview',title:'运行项目测试？',text:'swift test\n仅为界面演示',actions:[{id:'allow',kind:'allow_once',label:'允许一次'},{id:'deny',kind:'reject_once',label:'拒绝'}]}),300)
   }else {
    const result=await api.prompt(id,text,files.map(f=>f.id));
-   if(result?.uncertain)throw Object.assign(new Error(result.message),{uncertain:true});
+   if(result?.notSent||result?.uncertain)throw Object.assign(new Error(result.message),{notSent:result.notSent,uncertain:result.uncertain});
   }
  }catch(e){
-  const disconnected=s.offlineWhileRunning||e.uncertain;
+  const disconnected=!e.notSent&&(s.offlineWhileRunning||e.uncertain);
   if(disconnected){user.status='连接中断 · 未确认执行结果';s.error=(s.error||plain(e.message))+' 没有自动重发。重试之前请检查审阅面板。';}
   else {
-   if(t.messages.at(-1)===user)t.messages.pop();
+   if(e.notSent)t.messages=t.messages.filter(x=>x!==user);else if(t.messages.at(-1)===user)t.messages.pop();
    if(!local.text)local.text=original;local.files.unshift(...files);s.error=plain(e.message);
   }
-  finish(id,disconnected?'disconnected':'failed');if(key()===id)render();
- }
+  finish(id,disconnected?'disconnected':e.notSent?'not_sent':'failed');if(key()===id)render();
+ }finally{s.submitting=false;if(key()===id)buttons()}
 }
 async function steer(){
  const id=key(),s=runtime(id),t=current,d=draft(),text=d.text.trim();

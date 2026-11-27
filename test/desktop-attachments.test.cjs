@@ -7,12 +7,12 @@ const {createRequire}=require('node:module'),{runInNewContext}=require('node:vm'
 async function desktop(t,{Engine}={}){
  const tmp=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'orbite-ipc-'));
  t.after(()=>fs.rm(tmp,{recursive:true,force:true}));
- const handlers=new Map(),listeners=new Map(),calls=[];
- const frame={},sender={mainFrame:frame,setWindowOpenHandler(){},on(){}};
+ const handlers=new Map(),listeners=new Map(),calls=[],events=[];
+ const frame={},sender={mainFrame:frame,setWindowOpenHandler(){},on(){},send(_channel,data){events.push(data)}};
  let api,pick={canceled:true};
  const electron={
   app:{getPath:()=>tmp,setPath(){},setName(){},on(){},requestSingleInstanceLock:()=>true,whenReady:async()=>{}},
-  BrowserWindow:class{webContents=sender;loadFile(){}},
+  BrowserWindow:class{webContents=sender;loadFile(){}isDestroyed(){return false}},
   nativeTheme:{},dialog:{showOpenDialog:async()=>pick},
   ipcMain:{handle:(name,fn)=>handlers.set(name,fn)},
   ipcRenderer:{invoke:async(name,...args)=>{calls.push(name);return handlers.get(name)({sender,senderFrame:frame},...args)}},
@@ -27,7 +27,7 @@ async function desktop(t,{Engine}={}){
   },{filename});
  }
  await load('main.cjs');await load('preload.cjs');
- return {api,tmp,calls,drop:()=>listeners.get('drop'),setPick:value=>{pick=value}};
+ return {api,tmp,calls,events,drop:()=>listeners.get('drop'),setPick:value=>{pick=value}};
 }
 
 test('desktop picker cancels cleanly and reports a vanished file as a selection error',async t=>{
@@ -90,4 +90,44 @@ test('desktop Stop during attachment copy restores eligibility to send the same 
  await api.prompt('example','work',[id]);
  assert.equal(prompts.length,1);
  assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
+});
+
+test('desktop distinguishes disconnect during copy from disconnect after handing off the prompt',async t=>{
+ const prompts=[];
+ let runner,failAfterDispatch=false;
+ class TestEngine{
+  constructor(options){Object.assign(this,options);this.rpc={closed:false};runner=this}
+  async init(){}
+  async open(){return 'fixture-session'}
+  close(){}
+  offline(){this.rpc.closed=true;this.emit({type:'offline',text:'fixture disconnected'})}
+  async prompt(text,files){
+   prompts.push({text,files});
+   if(this.rpc.closed||failAfterDispatch){this.offline();throw new Error('fixture disconnected')}
+  }
+ }
+ const {api,tmp,setPick,events}=await desktop(t,{Engine:TestEngine});
+ const executable=path.join(tmp,'agy'),project=path.join(tmp,'project'),file=path.join(tmp,'draft.txt');
+ await Promise.all([fs.writeFile(executable,'fixture (not executed)',{mode:0o700}),fs.mkdir(project),fs.writeFile(file,'draft')]);
+ setPick({filePaths:[executable]});await api.executable();
+ setPick({filePaths:[project]});await api.pick();
+ await api.connect('example',project,null,false,false);
+ setPick({filePaths:[file]});const [{id}]=await api.attach('file');
+ const base=path.join(project,'.orbit-attachments'),writeFile=fs.writeFile;let disconnect=true;
+ t.mock.method(fs,'writeFile',async(dest,...args)=>{
+  const result=await writeFile(dest,...args);
+  if(disconnect&&dest.startsWith(base+path.sep)){disconnect=false;runner.offline()}
+  return result;
+ });
+ const first=await api.prompt('example','work',[id]);
+ assert.equal(first.notSent,true);assert.match(first.message,/未发送/);
+ assert.equal(prompts.length,0);assert.deepEqual(await fs.readdir(base),[]);
+ assert.equal(events.filter(x=>x.type==='offline').length,1);
+ await api.connect('example',project,'fixture-session',false,false);
+ failAfterDispatch=true;
+ const second=await api.prompt('example','work',[id]);
+ assert.equal(second.uncertain,true);assert.equal(second.notSent,undefined);
+ assert.equal(prompts.length,1);
+ assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
+ await assert.rejects(api.prompt('example','work',[id]),/附件已失效/);
 });

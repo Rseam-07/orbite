@@ -77,7 +77,11 @@ ipc('connect',async(task,root,id,enableExtension,isolated)=>{
  if(enableExtension&&!driver())throw new Error('请先在扩展中选取已安装的 Cua Driver。');
  close(task);limit();
  const mcp=enableExtension?[{name:'cua-driver',command:computerUsePath,args:['mcp'],env:[]}]:[];
- const runner=new Engine({exe:exe(),cwd:scope.dir,emit:e=>{if(runners.get(task)===runner)send(task,e)}});
+ const runner=new Engine({exe:exe(),cwd:scope.dir,emit:e=>{
+  if(runners.get(task)!==runner)return;
+  if(e.type==='offline')cancelPreparation(runner);
+  send(task,e);
+ }});
  runners.set(task,runner);runner.connecting=true;
  try{
   await runner.init();if(runners.get(task)!==runner)throw new Error('连接已退出');
@@ -102,15 +106,19 @@ ipc('paste-image',(mime,bytes)=>{
  return {name,kind,size,clipboard,id};
 });
 ipc('forget',forgetAttachment);
+const disconnectedBeforeSend={notSent:true,message:'连接在发送前中断，消息和附件均未发送。'};
 function cancelPreparation(r){r.preparing?.abort(new Error('已取消发送；本次附件未发送。'))}
 ipc('prompt',async(task,text,ids)=>{
  if(typeof text!=='string'||!text.trim()||text.length>100000)throw new Error('输入为空或超过长度限制');
  if(!Array.isArray(ids)||ids.length>16||ids.some(i=>!attachments.has(i)))throw new Error('附件已失效，请重新选取。');
- const r=get(task);if(r.active||r.preparing)throw new Error('当前回合仍在运行');
+ const r=get(task);if(r.rpc.closed)return disconnectedBeforeSend;
+ if(r.active||r.preparing)throw new Error('当前回合仍在运行');
  if([...runners.values()].some(other=>other!==r&&(other.active||other.preparing)&&(other.cwd===r.cwd||other.cwd.startsWith(r.cwd+path.sep)||r.cwd.startsWith(other.cwd+path.sep))))throw new Error('当前目录正在被另一会话使用。可用独立工作树并行运行。');if(r.extensions.length&&(cuaBusy||[...runners.values()].some(x=>x!==r&&x.extensions?.length&&(x.active||x.preparing))))throw new Error('另一会话正在使用桌面控制。请等它完成再运行。');
  const preparation=new AbortController();r.preparing=preparation;
  try{
-  const files=await stage(r.cwd,ids.map(i=>attachments.get(i)),{signal:preparation.signal});
+  let files;
+  try{files=await stage(r.cwd,ids.map(i=>attachments.get(i)),{signal:preparation.signal})}
+  catch(e){if(r.rpc.closed)return disconnectedBeforeSend;throw e}
   for(const f of files)if(f.skipped.length)r.emit({type:'activity',text:'附件 '+f.name+'：跳过 '+f.skipped.length+' 项（符号链接、依赖目录或常见凭据文件）'});
   const turn=r.prompt(text,files);r.preparing=null;
   try{await turn}catch(e){
