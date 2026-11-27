@@ -35,14 +35,18 @@ async function mcpInventory(exe,{args=['mcp'],cwd=os.homedir(),timeout=8000}={})
   const r=await m.call('initialize',{protocolVersion:'2025-11-25',capabilities:{},clientInfo:{name:'orbit-computer-use',version:'0.7.0'}},timeout);
   if(!VERSIONS.has(r?.protocolVersion)||!r.capabilities?.tools)throw new Error('MCP 握手未公布工具能力。');
   m.notify('notifications/initialized',{});
-  const names=new Set();let cursor;
+  const names=new Set();let cursor,readonlyPermissions=false;
   for(let i=0;i<5;i++){
    const t=await m.call('tools/list',cursor?{cursor}:{},timeout);
    if(!Array.isArray(t?.tools))throw new Error('MCP 工具列表无效。');
-   for(const tool of t.tools)if(typeof tool?.name==='string')names.add(tool.name);
+   for(const tool of t.tools)if(typeof tool?.name==='string'){
+    names.add(tool.name);
+    // The tool can request OS prompts by default. Require an advertised boolean switch.
+    if(tool.name==='check_permissions'&&tool.inputSchema?.properties?.prompt?.type==='boolean')readonlyPermissions=true;
+   }
    cursor=typeof t.nextCursor==='string'?t.nextCursor:null;if(!cursor)break;
   }
-  return {protocol:r.protocolVersion,tools:names.size,missing:required.filter(t=>!names.has(t)),server:String(r.serverInfo?.name??'').slice(0,64)};
+  return {protocol:r.protocolVersion,tools:names.size,missing:required.filter(t=>!names.has(t)),readonlyPermissions,server:String(r.serverInfo?.name??'').slice(0,64)};
  } finally{m.close()}
 }
 async function diagnose(file,platform=process.platform){
@@ -52,18 +56,19 @@ async function diagnose(file,platform=process.platform){
  const v=ver.stdout.match(/\b\d+\.\d+\.\d+(?:[-+.][\w.]+)?\b/)?.[0];
  if(ver.ok&&v)out.version=v;
  else{out.issues.push('驱动无法运行或没有报告版本。请检查安装路径。');return out}
- const results=await Promise.allSettled([
-  mcpInventory(file),
-  platform==='darwin'?run(file,['permissions','status','--json'],9000):Promise.resolve(null)
- ]);
- if(results[0].status==='fulfilled')out.mcp=results[0].value;
- else out.issues.push('MCP 没有完成握手。驱动可能尚未启动、版本不兼容，或本机连接不可用。');
- const perm=results[1].status==='fulfilled'&&results[1].value;
+ const perm=out.mac?await run(file,['permissions','status','--json'],9000):null;
  if(perm?.ok){
   const parsed=json(perm.stdout);
+  if(parsed?.daemon_running===false){
+   out.daemonRunning=false;
+   out.issues.push('Cua Driver 未运行，无法读取权限。在 Mac 上手动打开授权流程后，再点「检测本机」。本次检测不会启动驱动。');
+   return out;
+  }
   if(parsed)out.permissions=readPermission(parsed);
   else out.issues.push('驱动未返回可读的权限状态。');
  }else if(out.mac)out.issues.push('未能读取 macOS 权限状态。');
+ try{out.mcp=await mcpInventory(file)}
+ catch{out.issues.push('MCP 没有完成握手。驱动可能尚未启动、版本不兼容，或本机连接不可用。');}
  if(out.mcp?.missing.length)out.issues.push('MCP 缺少必要工具：'+out.mcp.missing.join('、')+'。');
  if(!out.mac)out.issues.push('这不是 macOS；不能验证 Mac 的录屏或辅助功能权限。');
  return out;
