@@ -1,8 +1,18 @@
 const {execFile}=require('node:child_process');
 const fs=require('node:fs/promises');
 const p=require('node:path');
+const {findExecutable}=require('./executables.cjs');
 function git(cwd,args,timeout=10000){
- return new Promise((resolve,reject)=>execFile('/usr/bin/git',['--no-pager','-c','core.fsmonitor=false','-c','core.hooksPath=/dev/null',...args],{cwd,timeout,maxBuffer:4*1024*1024,env:{...Object.fromEntries(Object.entries(process.env).filter(([k])=>!k.startsWith('GIT_'))),GIT_TERMINAL_PROMPT:'0'}},(e,stdout,stderr)=>e?reject(Object.assign(new Error(stderr.trim()||e.message),{exitCode:e.code})):resolve(stdout)));
+ const gitPath=findExecutable('git');
+ if(!gitPath)return Promise.reject(new Error('未找到 Git。安装 Git 后再使用审阅或独立工作树。'));
+ const env={...Object.fromEntries(Object.entries(process.env).filter(([key])=>!/^GIT_/i.test(key))),GIT_TERMINAL_PROMPT:'0'};
+ return new Promise((resolve,reject)=>{
+  // An existing executable is a file, not a directory in which hooks can live.
+  const child=execFile(gitPath,['--no-pager','-c','core.fsmonitor=false','-c','core.hooksPath='+process.execPath,...args],
+   {cwd,timeout,maxBuffer:4*1024*1024,env,windowsHide:true},(e,stdout,stderr)=>e?reject(Object.assign(new Error(stderr.trim()||e.message),{exitCode:e.code})):resolve(stdout));
+  child.stdin?.on('error',()=>{});
+  child.stdin?.end();
+ });
 }
 const validId=id=>typeof id==='string'&&/^[-a-z0-9]{1,70}$/.test(id);
 const validCommit=s=>/^[0-9a-f]{40,64}$/.test(s);
@@ -49,7 +59,7 @@ async function review(cwd,base){
    const hasHead=await git(cwd,['rev-parse','--verify','--quiet','HEAD']).then(()=>true,e=>{if(e.exitCode!==1)throw error;return false});
    if(hasHead)throw error;
    // Use Git's empty tree for this repository's object format without writing it.
-   const empty=(await git(cwd,['hash-object','-t','tree','/dev/null'])).trim();
+   const empty=(await git(cwd,['hash-object','-t','tree','--stdin'])).trim();
    if(!validCommit(empty))throw error;
    return git(cwd,[...args,empty,'--',NO_ATTACHMENT_COPIES]);
   })

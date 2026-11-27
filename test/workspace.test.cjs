@@ -8,7 +8,7 @@ async function fixture(t){
  const dir=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbit-test-'));t.after(()=>fs.rm(dir,{force:true,recursive:true}));
  const source=p.join(dir,'repo'),storage=p.join(dir,'worktrees');await fs.mkdir(source);await fs.mkdir(storage);
  const file=p.join(source,'资料.txt');
- await git(source,['init','-q']);await fs.writeFile(file,'baseline\n');await git(source,['add','.']);
+ await git(source,['init','-q']);await git(source,['config','core.autocrlf','false']);await fs.writeFile(file,'baseline\n');await git(source,['add','.']);
  await git(source,['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','baseline']);
  return {source,storage,file};
 }
@@ -105,7 +105,7 @@ test('review from a repository subfolder excludes only its own generated attachm
 test('workspace review includes staged and working edits before the first commit without writing the index',async t=>{
  const source=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbite-unborn-review-'));
  t.after(()=>fs.rm(source,{force:true,recursive:true}));
- await git(source,['init','-q']);
+ await git(source,['init','-q']);await git(source,['config','core.autocrlf','false']);
  await fs.writeFile(p.join(source,'staged.txt'),'staged content\n');
  await fs.writeFile(p.join(source,'edited.txt'),'staged previous version\n');
  await fs.mkdir(p.join(source,'.orbit-attachments'));

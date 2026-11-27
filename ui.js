@@ -1,7 +1,11 @@
 'use strict';
 const motion=window.OrbitMotion;
 const $=id=>document.getElementById(id),api=window.orbit,desktop=new URLSearchParams(location.search).has('desktop'),demo=!desktop&&!api,app=$('app');
-if(desktop)document.body.classList.add('is-desktop');
+const platform=api?.platform??(/mac/i.test(navigator.platform)?'darwin':'other');
+const modifier=platform==='darwin'?'⌘':'Ctrl';
+const unsupportedCua=Boolean(api?.platform&&api.platform!=='darwin');
+for(const hint of document.querySelectorAll('.top-links kbd'))hint.textContent=hint.textContent.replace('⌘',modifier);
+if(desktop){document.body.classList.add('is-desktop');if(!api?.platform||platform==='darwin')document.body.classList.add('has-native-traffic-lights')}
 const svgNS='http://www.w3.org/2000/svg';
 function icon(n){const e=document.createElementNS(svgNS,'svg'),u=document.createElementNS(svgNS,'use');u.setAttribute('href','#i-'+n);e.append(u);return e}
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n}
@@ -160,7 +164,7 @@ function renderAttachments(){
  const f=draft().files,tray=$('attachmentTray'),seen=new Set([...tray.children].map(n=>n.dataset.attachment));tray.hidden=!f.length;
  tray.replaceChildren(...f.map(a=>{const n=chip(a,true);n.dataset.attachment=a.id;return n}));
  [...tray.children].filter(n=>!seen.has(n.dataset.attachment)).forEach(n=>motion.enter(n));
- $('footerHint').textContent=f.length&&api?'附件发送时复制到项目 · ⌘ ↵':'⌘ ↵ 发送';
+ $('footerHint').textContent=f.length&&api?'附件发送时复制到项目 · '+modifier+' ↵':modifier+' ↵ 发送';
 }
 function addAttachments(files,d=draft()){
  const n=Math.max(0,16-d.files.length);d.files.push(...files.slice(0,n));
@@ -274,7 +278,7 @@ function render(){renderSidebar();renderChat();$('prompt').value=draft().text;re
 function buttons(){
  const s=runtime(),locked=s.running||s.connecting||s.submitting;
  $('auth').disabled=locked;$('selectExe').disabled=locked;$('folder').disabled=s.connecting;$('new').disabled=s.connecting;$('send').disabled=runtime().connecting||(!demo&&!api);$('sendIcon').setAttribute('href',runtime().running?'#i-stop':'#i-up');
- $('send').setAttribute('aria-label',s.running?'追加指令':'发送');$('send').title=s.running?'追加指令（⌘↵）':'发送（⌘↵）';
+ $('send').setAttribute('aria-label',s.running?'追加指令':'发送');$('send').title=(s.running?'追加指令':'发送')+'（'+modifier+' ↵）';
  $('sendIcon').setAttribute('href','#i-up');
  $('send').disabled=s.connecting||s.steering||(!s.running&&s.submitting)||draft().pasting||(!demo&&!api);
  $('stop').hidden=!s.running;$('composer').classList.toggle('is-running',s.running);
@@ -594,7 +598,9 @@ $('selectExe').onclick=async()=>{
 };
 function renderCua(){
  const s=runtime(),locked=s.running||s.connecting||cuaWorking;
- $('cuaProbe').disabled=locked;$('chooseDriver').disabled=locked;
+ $('cuaProbe').disabled=locked||unsupportedCua;$('chooseDriver').disabled=locked||unsupportedCua;
+ $('cuaDocs').disabled=unsupportedCua;
+ if(unsupportedCua){$('extensionStatus').textContent='当前平台不支持';$('extNote').textContent='Computer Use 目前仅提供 macOS 实验接入，不影响其他功能。'}
  $('cuaGrant').disabled=locked||!cuaStatus?.mac||!driverSelected;
  $('cuaTest').disabled=locked||!cuaStatus?.mac||!driverSelected||cuaStatus?.permissions?.accessibility!==true||cuaStatus?.permissions?.screen!==true;
  $('useDriver').disabled=locked||(!s.extensionEnabled&&(!folder||!driverSelected||!cuaStatus?.mcp||Boolean(cuaStatus.mcp.missing.length)||!cuaStatus.mac||cuaStatus.permissions?.accessibility!==true||cuaStatus.permissions?.screen!==true));

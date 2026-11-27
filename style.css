@@ -47,7 +47,8 @@ kbd { font:10px var(--mono); color:var(--dim); white-space:nowrap }
 .lights i { width:9px; height:9px; border-radius:50%; background:#f15e57 }
 .lights i:nth-child(2){background:#efb641}
 .lights i:nth-child(3){background:#55bb67}
-.is-desktop .lights { visibility:hidden; min-width:57px }
+.is-desktop .lights { display:none }
+.has-native-traffic-lights .lights { display:flex; visibility:hidden; min-width:57px }
 .top-links { padding:8px 0 17px }
 .nav,.project-row,.thread { width:100%; display:flex; align-items:center; gap:7px; min-width:0; text-align:left; border-radius:5px; padding:5px 7px; min-height:29px }
 .nav { font-weight:520 }
@@ -77,7 +78,7 @@ kbd { font:10px var(--mono); color:var(--dim); white-space:nowrap }
 #workspace { min-width:0; min-height:0; display:flex; flex-direction:column }
 .toolbar { height:49px; padding:0 15px; display:flex; align-items:center; gap:8px; flex-shrink:0; border-bottom:1px solid var(--line); background:var(--bar); -webkit-app-region:drag; -webkit-backdrop-filter:blur(12px); backdrop-filter:blur(12px) }
 .no-side .toolbar { padding-left:15px }
-.is-desktop .no-side .toolbar { padding-left:88px }
+.has-native-traffic-lights .no-side .toolbar { padding-left:88px }
 .breadcrumbs { display:flex; align-items:center; gap:5px; min-width:0; color:var(--dim); font-size:11px }
 .breadcrumbs svg { width:12px; height:12px }
 .breadcrumbs span,.breadcrumbs strong { overflow:hidden; text-overflow:ellipsis; white-space:nowrap }

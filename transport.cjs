@@ -9,7 +9,7 @@ class RPC{
   this.next=0;this.pending=new Map();this.closed=false;
   this.decoder=new StringDecoder('utf8');this.tail='';this.tailBytes=0;this.frameLimit=frameLimit;
   this.onMessage=onMessage;this.onExit=onExit;
-  this.child=spawnProcess(exe,args,{cwd,stdio:['pipe','pipe','pipe'],shell:false});
+  this.child=spawnProcess(exe,args,{cwd,stdio:['pipe','pipe','pipe'],shell:false,windowsHide:true});
   // Do not expose CLI stderr: it can contain auth material and local details.
   this.child.stderr.resume();
   this.child.stdin.on('error',()=>this.terminate('Antigravity 输入流中断。','PIPE'));

@@ -1,5 +1,6 @@
 const {contextBridge,ipcRenderer,webUtils}=require('electron');
 contextBridge.exposeInMainWorld('orbit',{
+ platform:process.platform,
  pick:s=>ipcRenderer.invoke('pick',s),
  executable:()=>ipcRenderer.invoke('executable'),
  computerUse:()=>ipcRenderer.invoke('computer-use'),
