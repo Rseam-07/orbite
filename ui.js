@@ -9,7 +9,7 @@ const basename=p=>p?.split(/[\\/]/).filter(Boolean).at(-1)||'';
 const storage=demo?'orbit07-preview':'orbit02-local';
 let data={projects:[],threads:[]};try{const d=JSON.parse(localStorage.getItem(storage)||'null');if(Array.isArray(d?.projects)&&Array.isArray(d?.threads))data=d}catch{}
 const sample='/Demo/Atelier';
-const sampleDiff={branch:'main',status:' M Sources/ImportList.swift\n M Tests/ImportListTests.swift',patch:`diff --git a/Sources/ImportList.swift b/Sources/ImportList.swift
+const sampleDiff={branch:'main',files:[{path:'Sources/ImportList.swift',status:'M',patch:`diff --git a/Sources/ImportList.swift b/Sources/ImportList.swift
 --- a/Sources/ImportList.swift
 +++ b/Sources/ImportList.swift
 @@ -34,4 +34,8 @@ func append(_ incoming: [URL]) {
@@ -19,15 +19,14 @@ const sampleDiff={branch:'main',status:' M Sources/ImportList.swift\n M Tests/Im
 +        guard seen.insert(key).inserted else { continue }
 +        items.append(url)
 +    }
- }
-diff --git a/Tests/ImportListTests.swift b/Tests/ImportListTests.swift
+ }`},{path:'Tests/ImportListTests.swift',status:'M',patch:`diff --git a/Tests/ImportListTests.swift b/Tests/ImportListTests.swift
 --- a/Tests/ImportListTests.swift
 +++ b/Tests/ImportListTests.swift
 @@ -14,3 +14,6 @@ struct ImportListTests {
 +    @Test func duplicateURLsAreIgnored() {
 +        #expect(importedURLs.count == 1)
 +    }
- }`};
+ }`}]};
 if(demo&&!data.projects.length){
  data={projects:[{path:sample},{path:'/Demo/NotesKit'}],threads:[
   {id:'sample-a',folder:sample,title:'修复导入列表的重复项',stamp:'刚刚',messages:[{role:'user',text:'导入同一个文件夹两次，列表里会出现重复项。按文件路径去重，保留原来的排序。',files:[{name:'ImportList.swift',kind:'file',size:4800},{name:'导入样例',kind:'folder'}]},{role:'assistant',text:'问题在导入合并时：第二批文件被直接追加。现在会用规范化路径去重，保留每个文件第一次出现的位置；不同目录下的同名文件仍会分别保留。\n\n改动在 `ImportList.swift`，并加了一个重复导入的回归测试。',status:'2 个文件有改动',tools:[{title:'读取 Sources/ImportList.swift',status:'completed'},{title:'修改 Sources/ImportList.swift',status:'completed'},{title:'补充 Tests/ImportListTests.swift',status:'completed'}]}]},
@@ -326,54 +325,53 @@ function renderActivity(){
  if(!r.childElementCount)r.append(el('div','暂无活动','ins-empty'));
  $('plan').replaceChildren(...runtime().plan.map(p=>el('div',(p.status==='completed'?'✓ ':p.status==='in_progress'?'◌ ':'○ ')+p.text,'activity-row')))
 }
-function agentPatch(name,c){
+function agentPatchLines(c){
  const a=c.before.split('\n'),b=c.after.split('\n');
  let pre=0,post=0;
  while(pre<a.length&&pre<b.length&&a[pre]===b[pre])pre++;
  while(post<a.length-pre&&post<b.length-pre&&a[a.length-1-post]===b[b.length-1-post])post++;
  const begin=Math.max(0,pre-3),endA=a.length-post,endB=b.length-post;
- return ['diff --git a/'+name+' b/'+name,'--- a/'+name,'+++ b/'+name,
+ return [
   '@@ 从第 '+(begin+1)+' 行开始',
   ...a.slice(begin,pre).map(t=>' '+t),
   ...a.slice(pre,endA).map(t=>'-'+t),
   ...b.slice(pre,endB).map(t=>'+'+t),
   ...a.slice(endA,endA+Math.min(post,3)).map(t=>' '+t)
- ].join('\n');
+ ];
 }
 function renderReview(){
  const state=runtime(),mode=state.diffMode;
  $('reviewMode').value=mode;
  $('reviewMode').options[0].textContent=current?.isolated?'工作树 · 相对起点':'工作区状态';
  $('branchWrap').hidden=!state.review?.branch;$('branch').textContent=state.review?.branch??'';
- const review=mode==='task'?{status:[...state.taskDiff.keys()].map(p=>' M '+p).join('\n'),patch:[...state.taskDiff].map(([p,c])=>agentPatch(p,c)).join('\n'),error:'当前会话还没有收到工具变更。'}:state.review;
- const files=String(review?.status??'').split('\n').filter(x=>x.trim()).filter(x=>!x.slice(3).startsWith('.orbit-attachments/'));
- $('diffCount').hidden=!files.length;$('diffCount').textContent=files.length?String(files.length):'';
+ const taskMode=mode==='task',review=state.review;
+ const files=taskMode?[...state.taskDiff.keys()].map(path=>({path,status:'M'})):(review?.files??[]);
+ const visibleFiles=files.filter(f=>!f.path.startsWith('.orbit-attachments/'));
+ $('diffCount').hidden=!visibleFiles.length;$('diffCount').textContent=visibleFiles.length?String(visibleFiles.length):'';
  const frame=$('changedFiles'),patch=$('patch');
  const focused=frame.contains(document.activeElement)?document.activeElement.dataset.path:undefined;
  frame.replaceChildren();patch.replaceChildren();
- if(!files.length){frame.append(el('div',review?.error||'没有变更','ins-empty'));if(focused!==undefined)$('refresh').focus();return}
- const chunks=(review?.patch??'').split(/(?=^diff --git )/m).filter(Boolean);
+ if(!visibleFiles.length){frame.append(el('div',taskMode?'当前会话还没有收到工具变更。':review?.error||'没有变更','ins-empty'));if(focused!==undefined)$('refresh').focus();return}
  const remembered=state.reviewSelection.get(mode);
- const selected=(files.find(f=>f.slice(3)===remembered)??files[0]).slice(3);
+ const selected=(visibleFiles.find(f=>f.path===remembered)??visibleFiles[0]).path;
  state.reviewSelection.set(mode,selected);
  let activeRow,focusRow;
- for(const f of files){
-  const path=f.slice(3),active=path===selected;
+ for(const {path,status} of visibleFiles){
+  const active=path===selected;
   const b=el('button',null,'file-row'+(active?' selected':''));
   b.dataset.path=path;
   if(active){b.setAttribute('aria-current','true');activeRow=b}
   if(path===focused)focusRow=b;
-  b.append(icon('file'),el('span',path),el('code',f.slice(0,2).trim()));
+  b.append(icon('file'),el('span',path),el('code',status));
   b.onclick=()=>{state.reviewSelection.set(mode,path);renderReview()};frame.append(b)
  }
  if(focused!==undefined)(focusRow??activeRow)?.focus({preventScroll:true});
- const name=selected.split(' -> ').at(-1);
- const found=chunks.find(x=>x.split('\n')[0].endsWith(' b/'+name)||x.split('\n').includes('+++ b/'+name));
- if(!found){patch.append(el('div','这个文件没有可显示的文本补丁。','ins-empty'));return}
+ const lines=taskMode?agentPatchLines(state.taskDiff.get(selected)):visibleFiles.find(f=>f.path===selected)?.patch?.split('\n');
+ if(!lines){patch.append(el('div','这个文件没有可显示的文本补丁。','ins-empty'));return}
  const item=el('div',null,'patch-file'),sc=el('div',null,'scroll'),head=el('div',null,'patch-title'),follow=el('button','反馈此文件','secondary');
  head.append(el('span',selected),follow);item.append(head,sc);
  follow.onclick=()=>{const d=draft();d.text+=(d.text.trim()?'\n\n':'')+'关于文件 '+JSON.stringify(selected)+'：';$('prompt').value=d.text;$('prompt').focus();$('prompt').setSelectionRange(d.text.length,d.text.length)};
- const lines=found.split('\n'),start=lines.findIndex(s=>s.startsWith('@@'));
+ const start=lines.findIndex(s=>s.startsWith('@@'));
  for(const ln of (start>=0?lines.slice(start):lines.slice(1)).slice(0,1600)){
   const type=ln[0]==='+'?' plus':ln[0]==='-'?' minus':ln.startsWith('@@')?' hunk':'';
   sc.append(el('div',ln||' ','patch-line'+type))
