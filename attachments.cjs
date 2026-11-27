@@ -56,10 +56,11 @@ async function stage(root,paths,{signal}={}){
    if(stat.isSymbolicLink()||!stat.isDirectory()&&!stat.isFile()){skipped.push(path.basename(from));return}
    if(stat.isDirectory()){
     await fs.mkdir(to,{mode:0o700});
-    for(const e of await fs.readdir(from)){
-     if(++entries>MAX_ENTRIES)throw new Error('附件超过 1,000 个条目。');
-     if(blocked(e)){skipped.push(e);continue}
-     entries--;await clone(path.join(from,e),path.join(to,e),skipped,depth+1);
+    // Enforce the entry limit without reading a potentially huge listing into memory.
+    for await(const {name} of await fs.opendir(from)){
+     if(entries>=MAX_ENTRIES)throw new Error('附件超过 1,000 个条目。');
+     if(blocked(name)){entries++;skipped.push(name);continue}
+     await clone(path.join(from,name),path.join(to,name),skipped,depth+1);
     }
    }else{
     const remaining=MAX_BYTES-bytes;
