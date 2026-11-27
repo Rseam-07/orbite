@@ -21,7 +21,8 @@ target_include_directories(orbite_core PUBLIC src)
 target_link_libraries(orbite_core PUBLIC Qt6::Core Qt6::Sql)
 target_compile_definitions(orbite_core PRIVATE ORBITE_VERSION="${ORBITE_VERSION}")
 
-add_library(orbite_widgets STATIC src/controller.cpp src/window.cpp src/review_panel.cpp src/theme.cpp src/workbench.cpp)
+add_library(orbite_widgets STATIC
+    src/controller.cpp src/window.cpp src/review_panel.cpp src/project_files.cpp src/theme.cpp src/workbench.cpp)
 target_link_libraries(orbite_widgets PUBLIC orbite_core Qt6::Widgets Qt6::Concurrent)
 
 qt_add_executable(Orbite WIN32 MACOSX_BUNDLE src/main.cpp)

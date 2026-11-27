@@ -184,7 +184,7 @@ bool openTerminal(const QString &directory, const QString &toolDirectory)
         return false;
 #ifdef Q_OS_MACOS
     Q_UNUSED(toolDirectory);
-    return QProcess::startDetached("/usr/bin/open", {"-a", "Terminal", cwd});
+    return QProcess::startDetached("/usr/bin/open", {"-b", "com.apple.Terminal", cwd});
 #elif defined(Q_OS_WIN)
     // Follow dsh-desktop's shell ordering. Use a native console and a working
     // directory so paths need no interpolation into shell commands.

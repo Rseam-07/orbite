@@ -2,8 +2,10 @@
 #include "window.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QClipboard>
 #include <QCompleter>
+#include <QDialog>
 #include <QDir>
 #include <QLabel>
 #include <QListWidget>
@@ -15,6 +17,7 @@
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QToolButton>
+#include <QTreeView>
 #include <QtTest>
 
 using namespace orbite;
@@ -54,12 +57,12 @@ private slots:
         Controller controller(profile, fixture);
         applyTheme(qEnvironmentVariable("ORBITE_PREVIEW_THEME", "dark"));
         const auto capture = qEnvironmentVariable("ORBITE_SCREENSHOT");
-        const auto captureView = [&](Window &window, const QString &view) {
+        const auto captureView = [&](QWidget &widget, const QString &view) {
             if (capture.isEmpty())
                 return true;
             const QFileInfo info(capture);
             QTest::qWait(150);
-            return window.grab().save(info.dir().filePath(info.completeBaseName() + view + ".png"));
+            return widget.grab().save(info.dir().filePath(info.completeBaseName() + view + ".png"));
         };
         if (!capture.isEmpty()) {
             const auto notes = root + "/NotesKit";
@@ -105,6 +108,35 @@ private slots:
         input->clear();
 
         QVERIFY(!QFileInfo::exists(workspace + "/review-notes.txt"));
+        auto *browse = window.findChild<QAction *>("browseProjectFiles");
+        QVERIFY(browse);
+        browse->trigger();
+        QDialog *files = nullptr;
+        QTRY_VERIFY_WITH_TIMEOUT((files = window.findChild<QDialog *>("projectFiles")) && files->isVisible(), 10000);
+        auto *tree = files->findChild<QTreeView *>("projectFileTree");
+        QVERIFY(tree && tree->rootIndex().isValid());
+        const auto findNotes = [&] {
+            const auto root = tree->rootIndex();
+            for (int row = 0; row < tree->model()->rowCount(root); ++row) {
+                const auto entry = tree->model()->index(row, 0, root);
+                if (entry.data().toString() == "review-notes.txt")
+                    return entry;
+            }
+            return QModelIndex();
+        };
+        QTRY_VERIFY_WITH_TIMEOUT(findNotes().isValid(), 5000);
+        tree->setCurrentIndex(findNotes());
+        auto *preview = files->findChild<QPlainTextEdit *>("projectFilePreview");
+        QVERIFY(preview);
+        QVERIFY(preview->toPlainText().contains("Qt 工作树验收"));
+        QVERIFY(captureView(*files, "-project-files"));
+        auto *reference = files->findChild<QPushButton *>("referenceProjectFile");
+        QVERIFY(reference && reference->isEnabled());
+        QTest::mouseClick(reference, Qt::LeftButton);
+        QCOMPARE(input->toPlainText(), "请查看“review-notes.txt:1”：");
+        QCOMPARE(controller.thread(id)->draft.text, input->toPlainText());
+        input->clear();
+
         auto *review = window.findChild<QPushButton *>("reviewToggle");
         QVERIFY(review);
         QTest::mouseClick(review, Qt::LeftButton);

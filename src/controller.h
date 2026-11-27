@@ -49,6 +49,7 @@ public:
     QString executable();
     QString driver();
     QString openProject(const QString &directory);
+    QString projectRoot(const QString &project);
     QString newThread(const QString &project, bool isolated = false);
     void rename(const QString &id, const QString &title);
     void setPinned(const QString &id, bool pinned);
@@ -89,7 +90,6 @@ signals:
     void remoteFailed(const QString &message);
 
 private:
-    QString projectRoot(const QString &project);
     void attachClient(const QString &id, const Scope &scope, const QString &program, const QString &driver);
     void beginSend(const QString &id);
     void abortConnection(const QString &id, const QString &error);

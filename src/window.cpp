@@ -1,6 +1,7 @@
 #include "window.h"
 #include "computer_use.h"
 #include "jobs.h"
+#include "project_files.h"
 #include "review_panel.h"
 #include "theme.h"
 #include "workbench.h"
@@ -16,6 +17,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QFileDialog>
+#include <QFileInfo>
 #include <QFocusEvent>
 #include <QFontDatabase>
 #include <QFrame>
@@ -187,6 +189,22 @@ QString projectName(const Project &project)
 {
     const QString name = QFileInfo(project.root).fileName();
     return name.isEmpty() ? project.root : name;
+}
+
+QString toolVersion(const QString &program)
+{
+    if (program.isEmpty())
+        return "未找到可执行文件";
+    try {
+        const auto result = runCommand(program, {"--version"}, QDir::homePath(), 4500, 24 * 1024);
+        if (result.code != 0)
+            return QString("版本检测失败（退出码 %1）").arg(result.code);
+        const auto version = QString::fromUtf8(result.output.isEmpty() ? result.error : result.output)
+                                 .trimmed().section('\n', 0, 0).trimmed().left(180);
+        return (version.isEmpty() ? QString("可运行") : version) + "\n" + QDir::toNativeSeparators(program);
+    } catch (const Failure &error) {
+        return error.text;
+    }
 }
 
 QString sessionSuffix(const Thread &thread, const Runtime &run)
@@ -529,6 +547,10 @@ Window::Window(Controller &controller)
     auto *fileMenu = menuBar()->addMenu("项目");
     fileMenu->addAction("打开项目…", QKeySequence::Open, this, &Window::chooseProject);
     fileMenu->addAction("新会话", QKeySequence::New, this, &Window::createSession);
+    auto *projectFiles = fileMenu->addAction("浏览项目文件…", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_P),
+                                             this, &Window::showProjectFiles);
+    projectFiles->setObjectName("browseProjectFiles");
+    fileMenu->addAction("在终端中打开工作目录", this, &Window::showTerminal);
     fileMenu->addAction("导入 Antigravity 会话…", this, [this] {
         if (project_.isEmpty())
             return info("请先选择项目。");
@@ -566,17 +588,7 @@ Window::Window(Controller &controller)
     });
     connect(reviewButton_, &QPushButton::toggled, this, &Window::displayReview);
     connect(review_, &ReviewPanel::dismissed, this, [this] { displayReview(false); });
-    connect(review_, &ReviewPanel::reference, this, [this](const QString &path, int line) {
-        auto location = path;
-        if (line > 0)
-            location += ":" + QString::number(line);
-        if (input_->isEnabled()) {
-            input_->moveCursor(QTextCursor::End);
-            input_->insertPlainText((input_->toPlainText().isEmpty() ? QString() : QString("\n")) +
-                                    QString("请查看“%1”：").arg(location));
-            input_->setFocus();
-        }
-    });
+    connect(review_, &ReviewPanel::reference, this, &Window::insertReference);
     connect(settings, &QPushButton::clicked, this, &Window::showSettings);
     connect(extensions, &QPushButton::clicked, this, &Window::showExtension);
     connect(search_, &QLineEdit::textChanged, this, &Window::rebuildNavigation);
@@ -1293,6 +1305,8 @@ void Window::threadMenu(const QPoint &position, const QString &id)
     }
     if (!project_.isEmpty()) {
         const auto project = controller_.projects().value(project_);
+        menu.addAction("浏览项目文件…", this, &Window::showProjectFiles);
+        menu.addAction("在终端中打开工作目录", this, &Window::showTerminal);
         menu.addAction("在文件管理器中打开项目", this, [project] {
             QDesktopServices::openUrl(QUrl::fromLocalFile(project.root));
         });
@@ -1303,6 +1317,61 @@ void Window::threadMenu(const QPoint &position, const QString &id)
     }
     menu.addAction("新会话", this, &Window::createSession);
     menu.exec(position);
+}
+
+void Window::withWorkspace(const std::function<void(const QString &)> &use)
+{
+    action([&] {
+        const auto id = current_;
+        if (id.isEmpty())
+            return use(controller_.projectRoot(project_));
+        const auto scope = controller_.scopeFor(id);
+        if (!controller_.thread(id)->isolated)
+            return use(scope.cwd);
+        const auto profile = controller_.profileDirectory();
+        runJob(this, [root = scope.root, profile, id] {
+            return openScope(root, profile, id, true, false).cwd;
+        }, [this, id, use](const JobResult<QString> &result) {
+            if (id != current_)
+                return;
+            if (result.value)
+                action([&] { use(*result.value); });
+            else
+                info(result.error);
+        });
+    });
+}
+
+void Window::showProjectFiles()
+{
+    withWorkspace([this](const QString &root) {
+        std::function<void(const QString &, int)> reference;
+        if (!current_.isEmpty() && input_->isEnabled())
+            reference = [this](const QString &path, int line) { insertReference(path, line); };
+        browseProjectFiles(this, root, reference);
+    });
+}
+
+void Window::showTerminal()
+{
+    withWorkspace([this](const QString &root) {
+        const auto cli = controller_.executable();
+        if (!openTerminal(root, cli.isEmpty() ? QString() : QFileInfo(cli).absolutePath()))
+            info("无法在此工作目录打开终端。");
+    });
+}
+
+void Window::insertReference(const QString &path, int line)
+{
+    if (!input_->isEnabled())
+        return;
+    auto location = path;
+    if (line > 0)
+        location += ":" + QString::number(line);
+    input_->moveCursor(QTextCursor::End);
+    const auto separator = input_->toPlainText().isEmpty() ? QString() : QString("\n");
+    input_->insertPlainText(separator + QString("请查看“%1”：").arg(location));
+    input_->setFocus();
 }
 
 void Window::showSettings()
@@ -1331,6 +1400,46 @@ void Window::showSettings()
         };
         addPath("Antigravity CLI", cli, controller_.executable());
         addPath("Cua Driver", driver, controller_.driver());
+        layout->addWidget(label("本机环境", "caption", &dialog));
+        auto *environment = new QPlainTextEdit(&dialog);
+        environment->setObjectName("environmentStatus");
+        environment->setAccessibleName("本机环境检测结果");
+        environment->setReadOnly(true);
+        environment->setFixedHeight(126);
+        layout->addWidget(environment);
+        auto *setupActions = new QHBoxLayout;
+        auto *check = button("重新检测", &dialog);
+        auto *installCli = button("安装 Antigravity CLI", &dialog);
+        auto *installGit = button("安装 Git", &dialog);
+        setupActions->addWidget(check);
+        setupActions->addWidget(installCli);
+        setupActions->addWidget(installGit);
+        setupActions->addStretch();
+        layout->addLayout(setupActions);
+        connect(installCli, &QPushButton::clicked, &dialog, [] {
+            QDesktopServices::openUrl(QUrl("https://antigravity.google/docs/install?tab=cli"));
+        });
+        connect(installGit, &QPushButton::clicked, &dialog, [] {
+            QDesktopServices::openUrl(QUrl("https://git-scm.com/downloads/"));
+        });
+        auto inspect = [&dialog, cli, environment, check] {
+            check->setEnabled(false);
+            environment->setPlainText("正在检查 Antigravity CLI 和 Git…");
+            const auto preferred = cli->text().trimmed();
+            runJob(&dialog, [preferred] {
+                const auto agy = toolVersion(findTool("agy", preferred));
+                const auto git = toolVersion(findTool("git"));
+                return QString("Antigravity CLI · %1\n\nGit · %2").arg(agy, git);
+            }, [cli, preferred, environment, check](const JobResult<QString> &result) {
+                check->setEnabled(true);
+                if (cli->text().trimmed() == preferred)
+                    environment->setPlainText(result.value.value_or(result.error));
+            });
+        };
+        connect(check, &QPushButton::clicked, &dialog, inspect);
+        connect(cli, &QLineEdit::textChanged, &dialog, [environment] {
+            environment->setPlainText("CLI 路径已修改，可重新检测。");
+        });
         layout->addWidget(label("界面外观", "caption", &dialog));
         auto *appearance = new QComboBox(&dialog);
         appearance->addItem("跟随系统", "system");
@@ -1338,24 +1447,29 @@ void Window::showSettings()
         appearance->addItem("深色 · 夜蓝", "dark");
         appearance->setCurrentIndex(qMax(0, appearance->findData(controller_.setting("theme"))));
         layout->addWidget(appearance);
-        auto *install = button("查看 Antigravity CLI 安装说明", &dialog);
-        layout->addWidget(install);
-        connect(install, &QPushButton::clicked, &dialog, [] {
-            QDesktopServices::openUrl(QUrl("https://antigravity.google/docs/cli-install"));
-        });
         auto *buttons = new QDialogButtonBox(QDialogButtonBox::Save | QDialogButtonBox::Cancel, &dialog);
         layout->addWidget(buttons);
-        connect(buttons, &QDialogButtonBox::accepted, &dialog, &QDialog::accept);
+        connect(buttons, &QDialogButtonBox::accepted, &dialog, [&] {
+            const auto cliPath = cli->text().trimmed();
+            const auto cuaPath = driver->text().trimmed();
+            if (!cliPath.isEmpty() && findTool("agy", cliPath).isEmpty()) {
+                environment->setPlainText("请选择有效的 Antigravity CLI 可执行文件。");
+                cli->setFocus();
+                return;
+            }
+            if (!cuaPath.isEmpty() && findTool("cua-driver", cuaPath).isEmpty()) {
+                environment->setPlainText("请选择有效的 Cua Driver 可执行文件。");
+                driver->setFocus();
+                return;
+            }
+            dialog.accept();
+        });
         connect(buttons, &QDialogButtonBox::rejected, &dialog, &QDialog::reject);
+        inspect();
         if (dialog.exec() != QDialog::Accepted)
             return;
-        const auto cliPath = cli->text().trimmed();
-        const auto cuaPath = driver->text().trimmed();
-        if ((!cliPath.isEmpty() && findTool("agy", cliPath).isEmpty()) ||
-            (!cuaPath.isEmpty() && findTool("cua-driver", cuaPath).isEmpty()))
-            throw Failure("设置未保存。请填写有效的可执行文件绝对路径。");
-        controller_.setSetting("agy", cliPath);
-        controller_.setSetting("driver", cuaPath);
+        controller_.setSetting("agy", cli->text().trimmed());
+        controller_.setSetting("driver", driver->text().trimmed());
         controller_.setSetting("theme", appearance->currentData().toString());
         applyAppearance(appearance->currentData().toString());
         info("设置已保存，程序路径会在下次连接时使用。");

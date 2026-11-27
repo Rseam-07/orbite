@@ -196,7 +196,7 @@ Scope openScope(const QString &root, const QString &profile, const QString &id,
             throw Failure("无法读取未完成的工作树记录。");
         const auto recorded = QJsonDocument::fromJson(manifest.readAll()).object();
         base = recorded.value("base").toString();
-        if (recorded.value("common").toString() != common || !validCommit(base))
+        if (!samePath(recorded.value("common").toString(), common) || !validCommit(base))
             throw Failure("工作树记录与项目不匹配。");
     } else {
         try {

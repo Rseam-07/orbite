@@ -1,15 +1,16 @@
 # <img src="assets/orbit-logo.svg" alt="" width="48" height="48" align="center"> Orbite
 
-Orbite 是 Google Antigravity 的独立 macOS 客户端。它用 C++ 和 Qt 6 Widgets 提供项目、会话、审批和 Git 审阅。模型和工具执行由官方 Antigravity CLI 提供。
+Orbite 是 Google Antigravity 的独立桌面客户端，支持 macOS（Apple Silicon 与 Intel）和 Windows x64。它用 C++ 和 Qt 6 Widgets 提供项目、会话、审批和 Git 审阅。模型和工具执行由官方 Antigravity CLI 提供。
 
 ## 运行
 
-[下载预发布版](https://github.com/Rseam-07/orbite/releases) · [发布说明](RELEASE.md)
+[下载预发布版](https://github.com/Rseam-07/orbite/releases) · [查看开发构建](https://github.com/Rseam-07/orbite/actions) · [发布说明](RELEASE.md)
 
-- 本地构建的磁盘映像可将 **Orbite.app** 拖到「应用程序」。开发包使用临时签名。正式分发需要 Developer ID 签名和公证。
-- 安装[官方 Antigravity CLI](https://antigravity.google/docs/cli-install)。Orbite 会在常见位置查找 `agy`，也可以在「设置」指定路径。
+- macOS 上打开 DMG，将 **Orbite.app** 拖到「应用程序」。开发包使用临时签名。
+- Windows 上运行 **Setup.exe** 安装到当前用户，或完整解压便携 ZIP 后运行其中的 **Orbite.exe**。开发构建中的 Windows 包尚未进行 Authenticode 签名。
+- 在「设置」检测本机的 Antigravity CLI 和 Git。Orbite 会查找系统 PATH 和官方安装目录，也可以手动指定 CLI 的可执行文件。 [Antigravity CLI 安装](https://antigravity.google/docs/install?tab=cli) · [Git 安装](https://git-scm.com/downloads/)
 - 打开一个项目并发送消息。引擎通过 `agy acp --sandbox` 运行。需要登录时按应用提示进入官方 Google 登录流程，也可以先在终端运行 `agy` 登录。
-- `⌘N` 新建会话，`⌘K` 搜索项目和会话，`⌘↩` 发送或补充，`⇧⌘R` 切换审阅。
+- macOS 用 `⌘N` 新建会话，`⌘K` 搜索项目和会话，`⌘↩` 发送或补充，`⇧⌘R` 切换审阅。Windows 使用 Ctrl 对应 ⌘。
 
 ## 使用
 
@@ -22,6 +23,8 @@ Orbite 是 Google Antigravity 的独立 macOS 客户端。它用 C++ 和 Qt 6 Wi
 **附件。** 可拖入文件和文件夹，通过按钮选取，或粘贴剪贴板中的截图。发送前在输入框查看并移除。附件会复制到任务目录下的 `.orbit-attachments`，每次最多 16 项、64 MiB 和 1,000 个条目，跳过符号链接、版本库和常见凭据文件。该目录应加入项目的 Git 忽略规则。支持图像输入的引擎会直接接收大小合适的 PNG、JPEG 和 WebP。
 
 **工作树与审阅。** 建连前勾选「独立工作树」可从 Git 项目的当前提交创建会话分支。审阅可查看 Git 工作区状态、会话工具报告的文件变化、计划和操作状态。可按文件名或路径筛选变更。工作区差异支持引用文件行、导出补丁或确认后应用到原项目。补丁包含未忽略的新文件和二进制变更。应用前会检查补丁以及受影响文件的本地改动，结果保存在目标工作区，由用户审阅和提交。工作树可以在文件管理器中打开。
+
+**项目文件和终端。** 从「项目」打开文件树、预览 UTF-8 文本，再把选中的文件和行号填入会话草稿。会话使用独立工作树时，文件树和终端会定位到该工作树。终端使用 macOS Terminal，也可在 Windows 上启动 PowerShell 或命令提示符。
 
 **Computer Use。** 在「扩展」检测已安装的 [Cua Driver](https://cua.ai/docs/cua-driver/quickstart)，分别确认 MCP 工具、macOS 权限和驱动官方自测结果。需要在会话菜单单独启用，再恢复或连接会话。兼容驱动可在检测后填入只读联调指令。
 
@@ -42,6 +45,20 @@ scripts/package-macos.sh "/path/to/Qt/6.8.3/macos" build dist
 ```
 
 打包脚本用 `macdeployqt` 收集运行库，检查 Cocoa 和 SQLite 插件，输出带架构名的 DMG 与 SHA-256 文件。提供 `ORBITE_SIGN_IDENTITY` 和 `ORBITE_NOTARY_PROFILE` 可走 Developer ID 签名与公证流程。GitHub Actions 分别配置了 Apple Silicon 和 Intel 构建。配置 CMake 时传入 `-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64"` 可构建通用包。
+
+Windows x64 使用 Qt 的 MSVC 2022 x64 SDK、Visual Studio x64 开发环境、Ninja 和 Inno Setup 6。下面的命令在 Visual Studio Developer PowerShell 中运行。
+
+```powershell
+$qt = 'C:/Qt/6.8.3/msvc2022_64'
+cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_PREFIX_PATH=$qt"
+cmake --build build --parallel
+$env:Path = "$qt/bin;$env:Path"
+ctest --test-dir build --output-on-failure
+./scripts/package-windows.ps1 -QtPrefix $qt -BuildDirectory build
+./scripts/test-package-windows.ps1 -OutputDirectory dist -Version (Get-Content build/release-version.txt)
+```
+
+Windows 打包会附带 Qt 平台插件、SQLite 驱动和 MSVC 运行库。CI 解包并启动便携版，也执行安装、启动和卸载流程。macOS 的 CI 从挂载的 DMG 启动应用。
 
 开发测试用独立目录和 ACP 子进程，覆盖协议、存储、Git 和 Qt 窗口交互。功能边界见[对照与后续](对照与后续.md)。开发说明见[贡献指南](CONTRIBUTING.md)。
 

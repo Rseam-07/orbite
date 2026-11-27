@@ -52,6 +52,10 @@ private:
     void buildEffortMenu();
     void buildCommandMenu();
     void threadMenu(const QPoint &position, const QString &id);
+    void withWorkspace(const std::function<void(const QString &)> &use);
+    void showProjectFiles();
+    void showTerminal();
+    void insertReference(const QString &path, int line);
     void showSettings();
     void showExtension();
     void showRemote(const QString &project, const QList<RemoteThread> &rows);
