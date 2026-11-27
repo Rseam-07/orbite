@@ -76,6 +76,8 @@ Antigravity 能干活，坐在它前面的人不该跟着费劲。拖一个文�
 
 ## 验证范围
 
+未发送的文字草稿按项目或会话保存在本机，重开可继续编辑（最多保留近期 20 份，有总大小限制）。草稿附件和剪贴板图片不会随之恢复。上次关闭时，已经尝试发送但结果未确认的消息会在原会话中标注，不会自动重发。
+
 `npm test` 验证 ACP 握手、Google 登录的协议分支、模型选项、按会话加入 MCP、流式回复/审批/停止，以及附件复制。离线交互预览已做浏览器测试。驱动校验用模拟 MCP 和 CLI 测试。上述引擎测试使用模拟 ACP 服务，**没有在真实 Mac 上完成 Google 登录、Cua Driver 授权或桌面动作**。另外用本地真实 Git 仓库测试了独立工作树和相对基线审阅；浏览器中测了快速切换、减少动态效果、断线的桌面桥接模拟和旧审阅请求乱序。此版不等于 Codex 全功能替代；后续差距见 `对照与后续.md`。
 
 技术参考：[Antigravity ACP](https://antigravity.google/docs/ide/extensions/acp/) · [ACP 会话选项](https://agentclientprotocol.com/protocol/v1/session-config-options) · [Codex 原版交互参考](https://openai.com/index/introducing-the-codex-app/)。
