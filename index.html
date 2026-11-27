@@ -20,14 +20,14 @@
 <symbol id="i-close" viewBox="0 0 20 20"><path d="m6 6 8 8m0-8-8 8"/></symbol>
 </svg>
 <div id="app" class="app">
-<aside id="sidebar"><div class="side-head"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="side-brand">Orbite</span><button class="icon" id="collapse" title="隐藏侧栏" aria-label="隐藏侧栏"><svg><use href="#i-sidebar"/></svg></button></div>
+<aside id="sidebar"><div class="side-head"><div class="lights" aria-hidden="true"><i></i><i></i><i></i></div><span class="side-brand">Orbite</span><button class="icon" id="collapse" aria-controls="sidebar" aria-expanded="true" title="隐藏侧栏" aria-label="隐藏侧栏"><svg><use href="#i-sidebar"/></svg></button></div>
 <div class="top-links"><button id="showHub" class="nav"><svg><use href="#i-extension"/></svg>工作台<kbd>⌘ 1</kbd></button><button id="new" class="nav"><svg><use href="#i-edit"/></svg>新建会话<kbd>⌘ N</kbd></button><button id="searchBtn" class="nav"><svg><use href="#i-find"/></svg>搜索会话<kbd>⌘ K</kbd></button></div>
 <div id="searchWrap" hidden><input id="search" type="search" aria-label="搜索项目和会话" placeholder="搜索项目和会话"></div>
 <div class="project-label"><span>项目</span><button class="icon" id="folder" title="打开项目" aria-label="打开项目"><svg><use href="#i-plus"/></svg></button></div>
 <div id="projects"></div>
 <div class="sidebar-bottom"><button id="extensions" class="nav"><svg><use href="#i-extension"/></svg>扩展</button><button id="setup" class="nav"><svg><use href="#i-settings"/></svg>设置 <span id="sideStatus"></span></button></div></aside>
 <main id="workspace">
-<header class="toolbar"><button id="expand" class="icon" title="显示侧栏" aria-label="显示侧栏" hidden><svg><use href="#i-sidebar"/></svg></button>
+<header class="toolbar"><button id="expand" aria-controls="sidebar" aria-expanded="false" class="icon" title="显示侧栏" aria-label="显示侧栏" hidden><svg><use href="#i-sidebar"/></svg></button>
 <div class="breadcrumbs"><span id="projectName">Orbite</span><svg><use href="#i-chevron"/></svg><strong id="taskTitle">工作台</strong></div><span class="toolbar-rule"></span><span id="toolbarEngine">Antigravity</span>
 <span class="grow"></span><span id="demoFlag" hidden>离线预览</span><button id="openDiff" class="toolbar-button" aria-expanded="false"><svg><use href="#i-pane"/></svg><span>审阅</span><span id="diffCount" hidden></span></button></header>
 <div id="scene" data-view="home"><section id="hub" aria-label="工作台">

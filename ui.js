@@ -119,7 +119,10 @@ async function pickProject(s){
  if(!p)return null;addProject(p);return p;
  }catch(e){notice(e);return null}
 }
-function sidebar(show){app.classList.toggle('no-side',!show);$('expand').hidden=show}
+function sidebar(show){
+ app.classList.toggle('no-side',!show);$('expand').hidden=show;
+ for(const id of ['expand','collapse'])$(id).setAttribute('aria-expanded',String(show));
+}
 function opensSidebar(){sidebar(true);$('searchWrap').hidden=false;$('search').focus()}
 function renderSidebar(){
  const root=$('projects'),q=$('search').value.trim().toLowerCase();root.replaceChildren();
@@ -562,7 +565,8 @@ $('demoFlag').hidden=!demo;
 $('prompt').oninput=()=>{draft().text=$('prompt').value;renderCommands()};
 $('new').onclick=()=>go(null,folder,null,true);$('showHub').onclick=showHub;
 $('folder').onclick=$('emptyPick').onclick=$('hubOpen').onclick=async()=>{const p=await pickProject(null);if(p)go(null,p,null,true)};
-$('collapse').onclick=()=>sidebar(false);$('expand').onclick=()=>sidebar(true);
+$('collapse').onclick=()=>{sidebar(false);$('expand').focus({preventScroll:true})};
+$('expand').onclick=()=>{sidebar(true);$('collapse').focus({preventScroll:true})};
 $('searchBtn').onclick=()=>{if(!$('searchWrap').hidden){$('searchWrap').hidden=true;$('search').value='';renderSidebar()}else opensSidebar()};
 $('search').oninput=renderSidebar;
 $('openDiff').onclick=()=>reviewPanel($('body').dataset.review!=='open');
