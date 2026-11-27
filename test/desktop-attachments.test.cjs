@@ -131,3 +131,32 @@ test('desktop distinguishes disconnect during copy from disconnect after handing
  assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
  await assert.rejects(api.prompt('example','work',[id]),/附件已失效/);
 });
+
+test('desktop round trip sends a chosen folder and file through the real ACP transport to a disposable mock',{timeout:10000},async t=>{
+ const {Engine}=require('../core.cjs');
+ // Only the executable and arguments are replaced; the child handles the actual JSON-RPC pipe.
+ class FixtureEngine extends Engine{
+  constructor(opts){super({...opts,exe:process.execPath,args:[path.join(__dirname,'mock.cjs'),'attachment-roundtrip']})}
+ }
+ const {api,tmp,events,setPick}=await desktop(t,{Engine:FixtureEngine});
+ const executable=path.join(tmp,process.platform==='win32'?'agy.exe':'agy'),project=path.join(tmp,'project'),
+  folder=path.join(tmp,'folder'),file=path.join(tmp,'loose.txt');
+ await Promise.all([fs.writeFile(executable,'unexecuted chooser placeholder',{mode:0o700}),fs.mkdir(project),fs.mkdir(folder),fs.writeFile(file,'file fixture')]);
+ await Promise.all([fs.writeFile(path.join(folder,'note.txt'),'folder fixture'),fs.writeFile(path.join(folder,'.env'),'not a real credential')]);
+ setPick({filePaths:[executable]});await api.executable();
+ setPick({filePaths:[project]});await api.pick();
+ const task='fixture-roundtrip';
+ try{
+  const auth=await api.connect(task,project,null,false,false);
+  assert.equal(auth.auth,true);assert.equal(auth.available,true);
+  assert.equal((await api.authenticate(task)).session,'a1');
+  setPick({filePaths:[folder]});const [dirAttachment]=await api.attach('folder');
+  setPick({filePaths:[file]});const [fileAttachment]=await api.attach('file');
+  assert.equal(dirAttachment.kind,'folder');assert.equal(fileAttachment.kind,'file');
+  assert.equal((await api.prompt(task,'Read both fixture attachments.',[dirAttachment.id,fileAttachment.id])).ok,true);
+  assert.equal(events.find(e=>e.type==='delta'&&e.task===task)?.text,'Read both staged fixtures.');
+  assert.equal(events.find(e=>e.type==='done'&&e.task===task)?.status,'end_turn');
+  assert.match(events.find(e=>e.type==='activity'&&e.task===task)?.text,/跳过 1 项/);
+  await assert.rejects(api.prompt(task,'Do not resend finished attachments.',[dirAttachment.id,fileAttachment.id]),/附件已失效/);
+ }finally{await api.disconnect(task)}
+});
