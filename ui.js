@@ -6,7 +6,7 @@ const svgNS='http://www.w3.org/2000/svg';
 function icon(n){const e=document.createElementNS(svgNS,'svg'),u=document.createElementNS(svgNS,'use');u.setAttribute('href','#i-'+n);e.append(u);return e}
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n}
 const basename=p=>p?.split(/[\\/]/).filter(Boolean).at(-1)||'';
-const storage=demo?'orbit07-preview':'orbit02-local';
+const storage=demo?'orbit07-preview':'orbit02-local',selectionStorage=storage+'-selection';
 let data={projects:[],threads:[]};try{const d=JSON.parse(localStorage.getItem(storage)||'null');if(Array.isArray(d?.projects)&&Array.isArray(d?.threads))data=d}catch{}
 const sample='/Demo/Atelier';
 const sampleDiff={branch:'main',status:' M Sources/ImportList.swift\n M Tests/ImportListTests.swift',patch:`diff --git a/Sources/ImportList.swift b/Sources/ImportList.swift
@@ -36,7 +36,13 @@ if(demo&&!data.projects.length){
  ],selected:'sample-a'};
 }
 let view='home',saveTimer=0,scrollTicket=0,reviewMotionTimer=0;
-let current=data.threads.find(x=>x.id===data.selected)||null,folder=current?.folder??null,tab='diff',driverSelected=false,cuaStatus=null,cuaTestResult=null,cuaWorking=false;
+function restoredThread(){
+ let id=null;try{id=localStorage.getItem(selectionStorage)}catch{}
+ if(id==='')return null;
+ return data.threads.find(x=>x.id===(id??data.selected))
+  ??(id===null?null:data.threads.find(x=>x.id===data.selected))??null
+}
+let current=restoredThread(),folder=current?.folder??null,tab='diff',driverSelected=false,cuaStatus=null,cuaTestResult=null,cuaWorking=false;
 const authorized=new Set(demo?data.projects.map(x=>x.path):[]),drafts=new Map(),states=new Map(),incomingDrops=new Map();
 const demoOptions=[{id:'model',name:'模型（离线预览）',currentValue:'demo-model',options:[{value:'demo-model',name:'Gemini'}]},{id:'mode',name:'模式（离线预览）',currentValue:'default',options:[{value:'default',name:'默认'},{value:'plan',name:'计划'}]}];
 function runtime(id=key()){
@@ -45,8 +51,12 @@ function runtime(id=key()){
 }
 function key(){return current?.id??'new:'+String(folder)}
 function draft(){if(!drafts.has(key()))drafts.set(key(),{text:'',files:[],isolated:false});return drafts.get(key())}
-function persist(){clearTimeout(saveTimer);saveTimer=0;try{localStorage.setItem(storage,JSON.stringify({...data,threads:data.threads.slice(0,80),selected:current?.id??null}))}catch{}}
+function persist(){clearTimeout(saveTimer);saveTimer=0;try{localStorage.setItem(storage,JSON.stringify({...data,threads:data.threads.slice(0,80),selected:current?.id??null}));localStorage.removeItem(selectionStorage)}catch{}}
 function scheduleSave(){if(!saveTimer)saveTimer=setTimeout(persist,350)}
+function persistSelection(){
+ // Navigation must not serialize unrelated chat history or reset a streaming save.
+ try{localStorage.setItem(selectionStorage,current?.id??'')}catch{scheduleSave()}
+}
 window.addEventListener('pagehide',persist);
 function plain(t){return String(t||'').replace(/^Error invoking remote method '[^']+': Error: /,'').trim()}
 function setStatus(t,id=key()){
@@ -69,7 +79,7 @@ function go(t,f,source=null,focus=false){
  if(runtime().connecting)return Promise.resolve();
  const anchor=source??(view==='home'?[...$('hubTiles').querySelectorAll('.metro-tile')].find(n=>n.dataset.project===(t?.folder??f??folder)):null);
  const action=()=>{
-  current=t;folder=t?.folder??f??folder;viewLayout('thread');persist();render();scanProject();renderActivity();
+  current=t;folder=t?.folder??f??folder;viewLayout('thread');persistSelection();render();scanProject();renderActivity();
   if(!t)reviewPanel(false);
   if(innerWidth<=640)sidebar(false);
   if(focus)$('prompt').focus({preventScroll:true});
@@ -112,7 +122,10 @@ function renderHub(){
  }
  if(!recent.childElementCount)recent.append(el('p','还没有会话。','empty-list'));
 }
-function addProject(p){if(!data.projects.some(x=>x.path===p))data.projects.unshift({path:p});authorized.add(p)}
+function addProject(p){
+ if(!data.projects.some(x=>x.path===p)){data.projects.unshift({path:p});persist()}
+ authorized.add(p)
+}
 async function pickProject(s){
  try{
  const p=demo?(s||'/Demo/示例项目'):await api.pick(typeof s==='string'?s:null);
