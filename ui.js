@@ -268,7 +268,22 @@ function message(m){
  if(m.files?.length){const files=el('div',null,'chips');files.append(...m.files.map(f=>chip(f,false)));body.append(files)}
  const t=el('div',null,'text');textParts(t,m.text);body.append(t);root.append(body);
  if(m.tools?.length)root.append(toolDetails(m.tools));
- if(m.status){const strip=el('div',null,'action-strip');strip.append(icon('check'),el('span',m.status));root.append(strip)}
+ if(m.status){
+  const strip=el('div',null,'action-strip');
+  if(!user)strip.append(icon('check'));
+  strip.append(el('span',m.status));
+  if(user&&typeof m.recoverText==='string'){
+   const recover=el('button','加回草稿','secondary');
+   recover.onclick=()=>{
+    const d=draft(),prompt=$('prompt');
+    d.text+= (d.text?'\n\n':'')+m.recoverText;
+    delete m.recoverText;recover.remove();
+    prompt.value=d.text;renderCommands();prompt.focus();prompt.setSelectionRange(d.text.length,d.text.length);persist();
+   };
+   strip.append(recover);
+  }
+  root.append(strip)
+ }
  return root;
 }
 function renderChat(){
@@ -539,7 +554,7 @@ async function send(){
  }finally{if(user.pendingDelivery){delete user.pendingDelivery;persist()}s.submitting=false;if(key()===id)buttons()}
 }
 async function steer(){
- const id=key(),s=runtime(id),t=current,d=draft(),text=d.text.trim();
+ const id=key(),s=runtime(id),t=current,d=draft(),original=d.text,text=original.trim();
  if(!s.running||!text||s.steering)return;
  if(d.files.length){notice('运行中只补充文字。附件会留在草稿里，等下一轮再送。');return}
  s.steering=true;s.assistant=null;d.text='';const m={role:'user',text,status:'追加指令'};if(!demo)m.pendingDelivery='steer';t.messages.push(m);render();persist();
@@ -552,7 +567,11 @@ async function steer(){
  }catch(e){
   delete m.pendingDelivery;
   if(e.uncertain||s.offlineWhileRunning){m.status='连接中断 · 未确认追加结果';s.error=plain(e.message)+' 没有自动重发。'}
-  else {t.messages=t.messages.filter(x=>x!==m);if(!d.text)d.text=text;s.error=plain(e.message)}
+  else {
+   if(d.text){m.status='未发送 · 追加指令';m.recoverText=original}
+   else {t.messages=t.messages.filter(x=>x!==m);d.text=original}
+   s.error=plain(e.message)
+  }
   persist();
  }finally{if(m.pendingDelivery){delete m.pendingDelivery;persist()}s.steering=false;if(key()===id)render()}
 }
