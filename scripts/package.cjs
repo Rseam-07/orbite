@@ -52,7 +52,7 @@ async function main(){
   }
   // Stage only named runtime files, never local attachments, env files, or credentials.
   const {name,productName,version,description,main,license}=meta;
-  await fs.writeFile(path.join(input,'package.json'),JSON.stringify({name,productName,version,description,main,license}));
+  await fs.writeFile(path.join(input,'package.json'),JSON.stringify({name,productName,version,description,main,license,author:'Orbite maintainers'}));
   const [bundle]=await packager({dir:input,out:path.join(root,'dist'),name:productName,platform,arch,
    electronVersion:meta.devDependencies.electron,appBundleId:meta.config.appId,appVersion:version,overwrite:true,prune:false,asar:true});
   const artifacts=path.join(root,'dist','artifacts');
