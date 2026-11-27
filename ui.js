@@ -39,8 +39,9 @@ let view='home',saveTimer=0,scrollTicket=0,reviewMotionTimer=0;
 let current=data.threads.find(x=>x.id===data.selected)||null,folder=current?.folder??null,tab='diff',driverSelected=false,cuaStatus=null,cuaTestResult=null,cuaWorking=false;
 const authorized=new Set(demo?data.projects.map(x=>x.path):[]),drafts=new Map(),states=new Map(),incomingDrops=new Map();
 const demoOptions=[{id:'model',name:'模型（离线预览）',currentValue:'demo-model',options:[{value:'demo-model',name:'Gemini'}]},{id:'mode',name:'模式（离线预览）',currentValue:'default',options:[{value:'default',name:'默认'},{value:'plan',name:'计划'}]}];
+const recentToolLimit=100,turnToolLimit=20,activityNoteLimit=60;
 function runtime(id=key()){
- if(!states.has(id))states.set(id,{running:false,connecting:false,session:null,authState:null,options:demo?demoOptions:[],reviewSelection:new Map(),review:null,extensionEnabled:false,turns:new Map(),approvals:new Map(),plan:[],activity:[],turnTools:new Map(),demoTimer:0,error:'',status:'',isolatedReady:false,taskDiff:new Map(),diffMode:'workspace',steering:false,refreshSeq:0,dirtyText:false,flushFrame:0,offlineWhileRunning:false,commands:demo?[{name:'plan',description:'先制定计划'},{name:'compact',description:'压缩会话上下文'}]:[]});
+ if(!states.has(id))states.set(id,{running:false,connecting:false,session:null,authState:null,options:demo?demoOptions:[],reviewSelection:new Map(),review:null,extensionEnabled:false,turns:new Map(),approvals:new Map(),plan:[],activity:[],turnTools:new Map(),activityFrame:0,activityClipped:false,demoTimer:0,error:'',status:'',isolatedReady:false,taskDiff:new Map(),diffMode:'workspace',steering:false,refreshSeq:0,dirtyText:false,flushFrame:0,offlineWhileRunning:false,commands:demo?[{name:'plan',description:'先制定计划'},{name:'compact',description:'压缩会话上下文'}]:[]});
  return states.get(id);
 }
 function key(){return current?.id??'new:'+String(folder)}
@@ -205,20 +206,37 @@ function textParts(into,text){
 }
 function toolDetails(tools,open=false){
  const panel=el('details',null,'tool-details');panel.open=open;
- const summary=el('summary');summary.append(icon('chevron'),el('span',tools.length+' 项操作'));panel.append(summary);
- const list=el('ol',null,'tool-details-list');
- for(const t of tools){
+ const summary=el('summary');summary.append(icon('chevron'),el('span'));panel.append(summary,el('ol',null,'tool-details-list'));
+ updateToolDetails(panel,tools);return panel
+}
+function updateToolDetails(panel,tools){
+ panel.querySelector('summary span').textContent=tools.length+' 项操作';
+ const rows=tools.map(t=>{
   const row=el('li',null,'tool-detail');
   const label=t.status==='completed'?'完成':t.status==='failed'?'失败':t.status==='in_progress'?'运行中':'等待';
   row.append(el('span',t.title||'工具调用','tool-name'),el('span',label,'tool-state '+(t.status||'')));
-  list.append(row)
- }
- panel.append(list);return panel
+  return row
+ });
+ panel.querySelector('ol').replaceChildren(...rows);
 }
 function renderTurnTools(){
- const root=$('toolSummary'),s=runtime(),items=[...s.turnTools.values()].slice(-20),wasOpen=root.querySelector('details')?.open;
- root.replaceChildren();
- if(s.running&&items.length)root.append(toolDetails(items,wasOpen));
+ const root=$('toolSummary'),s=runtime(),items=[...s.turnTools.values()],id=key(),panel=root.firstElementChild;
+ if(!s.running||!items.length){root.replaceChildren();return}
+ if(panel?.dataset.thread===id){updateToolDetails(panel,items);return}
+ const next=toolDetails(items);next.dataset.thread=id;root.replaceChildren(next);
+}
+function appendRecent(map,id,value,limit){
+ map.set(id,value);
+ if(map.size<=limit)return false;
+ map.delete(map.keys().next().value);return true
+}
+function queueActivity(s,id){
+ if(id!==key()||s.activityFrame)return;
+ s.activityFrame=requestAnimationFrame(()=>{
+  s.activityFrame=0;if(id!==key()||view!=='thread')return;
+  renderTurnTools();
+  if(tab==='activity'&&$('body').dataset.review==='open')renderActivity();
+ });
 }
 function message(m){
  const user=m.role==='user',root=el('article',null,'turn '+(user?'user-turn':'assistant-turn'));
@@ -317,14 +335,15 @@ function reviewPanel(show){
   reviewMotionTimer=setTimeout(()=>stage.removeAttribute('data-review-motion'),270);
  }
  stage.dataset.review=show?'open':'closed';shell.inert=!show;shell.setAttribute('aria-hidden',String(!show));
- $('openDiff').setAttribute('aria-expanded',String(show));if(show&&tab==='diff')scanProject();
+ $('openDiff').setAttribute('aria-expanded',String(show));if(show){if(tab==='diff')scanProject();else renderActivity()}
 }
 function renderActivity(){
- const r=$('activity');r.replaceChildren();
- for(const e of runtime().turns.values()){const row=el('div',e.title||'工具调用','activity-row');if(e.status)row.append(el('small',({pending:'等待中',in_progress:'执行中',completed:'完成',failed:'失败'}[e.status]||e.status)));r.append(row)}
- for(const x of runtime().activity)r.append(el('div',x,'activity-row'));
+ const r=$('activity'),s=runtime();r.replaceChildren();
+ if(s.activityClipped)r.append(el('div','仅显示近期活动','ins-empty'));
+ for(const e of s.turns.values()){const row=el('div',e.title||'工具调用','activity-row');if(e.status)row.append(el('small',({pending:'等待中',in_progress:'执行中',completed:'完成',failed:'失败'}[e.status]||e.status)));r.append(row)}
+ for(const x of s.activity)r.append(el('div',x,'activity-row'));
  if(!r.childElementCount)r.append(el('div','暂无活动','ins-empty'));
- $('plan').replaceChildren(...runtime().plan.map(p=>el('div',(p.status==='completed'?'✓ ':p.status==='in_progress'?'◌ ':'○ ')+p.text,'activity-row')))
+ $('plan').replaceChildren(...s.plan.map(p=>el('div',(p.status==='completed'?'✓ ':p.status==='in_progress'?'◌ ':'○ ')+p.text,'activity-row')))
 }
 function agentPatch(name,c){
  const a=c.before.split('\n'),b=c.after.split('\n');
@@ -431,10 +450,11 @@ async function connect(allowAuth=false){
 function finish(id,status){
  const s=runtime(id),labels={end_turn:'',cancelled:'已停止',refusal:'请求未执行',disconnected:'连接中断',not_sent:'未发送，可重新连接后重试',max_tokens:'达到输出上限'};
  if(s.flushFrame){cancelAnimationFrame(s.flushFrame);s.flushFrame=0}
- const t=data.threads.find(x=>x.id===id),ops=[...s.turnTools.values()].slice(-20);
+ if(s.activityFrame){cancelAnimationFrame(s.activityFrame);s.activityFrame=0}
+ const t=data.threads.find(x=>x.id===id),ops=[...s.turnTools.values()];
  if(ops.length&&t){if(s.assistant)s.assistant.tools=ops;else t.messages.push({role:'assistant',text:'',tools:ops})}
  s.turnTools.clear();s.running=false;s.approvals.clear();s.steering=false;s.assistant=null;setStatus(labels[status]??'',id);
- if(id===key()){buttons();renderChat();scanProject()}
+ if(id===key()){buttons();renderChat();scanProject();if(tab==='activity'&&$('body').dataset.review==='open')renderActivity()}
  renderSidebar();persist()
 }
 function handle(e){
@@ -451,9 +471,16 @@ function handle(e){
   if(!s.assistant){s.assistant={role:'assistant',text:''};t.messages.push(s.assistant)}
   s.assistant.text+=e.text??'';scheduleSave();if(visible)queueStream(s,id);
  }else if(e.type==='approval'){s.approvals.set(e.key,e);setStatus('等待审批',id);renderSidebar();if(visible){renderLive();bottom()}}
- else if(e.type==='tool'){const prev=s.turns.get(e.id)??{};const op={title:e.title??prev.title,status:e.status??prev.status};s.turns.set(e.id,op);s.turnTools.set(e.id,op);if(visible){renderActivity();renderTurnTools()}}
- else if(e.type==='activity'){s.activity.push(e.text);if(visible)renderActivity()}
- else if(e.type==='plan'){s.plan=e.entries;if(visible)renderActivity()}
+ else if(e.type==='tool'){
+  const prev=s.turns.get(e.id),op={title:e.title??prev?.title,status:e.status??prev?.status};
+  if(s.turnTools.has(e.id)&&prev?.title===op.title&&prev?.status===op.status)return;
+  if(appendRecent(s.turns,e.id,op,recentToolLimit))s.activityClipped=true;
+  appendRecent(s.turnTools,e.id,op,turnToolLimit);queueActivity(s,id);
+ }else if(e.type==='activity'){
+  s.activity.push(e.text);
+  if(s.activity.length>activityNoteLimit){s.activity.shift();s.activityClipped=true}
+  queueActivity(s,id)
+ }else if(e.type==='plan'){s.plan=e.entries;queueActivity(s,id)}
  else if(e.type==='taskDiff'){
   if(s.taskDiff.size>=32&&!s.taskDiff.has(e.path))return;
   const prev=s.taskDiff.get(e.path);s.taskDiff.set(e.path,{before:prev?.before??e.before,after:e.after});
