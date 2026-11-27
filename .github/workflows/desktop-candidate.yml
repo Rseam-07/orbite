@@ -36,6 +36,8 @@ jobs:
           npm run package -- linux x64
           sudo apt-get update
           sudo apt-get install -y ./dist/artifacts/*.deb
+          test "$(stat -c "%a:%u" /opt/orbite)" = "755:0"
+          test "$(stat -c "%a:%u" /opt/orbite/chrome-sandbox)" = "4755:0"
           timeout 30s xvfb-run -a /opt/orbite/Orbite --orbite-package-smoke
       - if: runner.os != 'Linux'
         run: npm run package -- ${{ matrix.platform }} ${{ matrix.arch }} --smoke

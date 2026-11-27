@@ -20,6 +20,8 @@ async function deb(bundle,archive,input){
  const tree=path.join(input,'debian'),install=path.join(tree,'opt','orbite');
  await fs.mkdir(path.dirname(install),{recursive:true});
  await fs.cp(bundle,install,{recursive:true,verbatimSymlinks:true});
+ // Electron Packager stages its top directory as 0700; the system package must be traversable.
+ await fs.chmod(install,0o755);
  // Chromium's fallback sandbox must be root-owned and setuid on distros
  // that restrict unprivileged user namespaces. Do not disable sandboxing.
  await fs.chmod(path.join(install,'chrome-sandbox'),0o4755);
