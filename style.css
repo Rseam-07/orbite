@@ -130,6 +130,10 @@ kbd { font:10px var(--mono); color:var(--dim); white-space:nowrap }
 .route-head h1 { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:clamp(18px,2.15vw,27px); margin:3px 0 0; line-height:1.23; font-weight:650; letter-spacing:-.045em }
 #routeMarker { width:29px; height:29px; display:grid; place-items:center; border-radius:2px; background:var(--accent-soft); color:var(--accent); flex-shrink:0 }
 #chat { flex:1; min-height:0; overflow:auto; scrollbar-width:thin }
+#jumpLatest { position:absolute; inset-inline-end:24px; bottom:calc(100% + 8px); z-index:1; display:inline-flex; align-items:center; gap:6px; min-height:32px; padding:0 9px; background:var(--panel); color:var(--text); border:1px solid var(--line); border-radius:6px; font-size:12px; white-space:nowrap }
+#jumpLatest[hidden] { display:none }
+#jumpLatest:hover { border-color:var(--muted) }
+#jumpLatest svg { inline-size:13px; block-size:13px; transform:rotate(180deg) }
 #timeline { width:min(100%,755px); min-height:100%; margin:0 auto; padding:19px 26px 12px; display:flex; flex-direction:column }
 #welcome { margin:auto 0; padding-bottom:20px }
 #welcome h1 { margin:0 0 5px; font-size:17px; letter-spacing:-.02em }
@@ -163,7 +167,7 @@ kbd { font:10px var(--mono); color:var(--dim); white-space:nowrap }
 .approval-card strong { font-size:11px }
 .approval-card pre { white-space:pre-wrap; overflow-wrap:anywhere; max-height:160px; overflow:auto; color:var(--muted); margin:6px 0 8px }
 .approval-actions { display:flex; gap:5px }
-.composer-wrap { margin:0 auto; width:min(100%,750px); padding:0 23px }
+.composer-wrap { position:relative; margin:0 auto; width:min(100%,750px); padding:0 23px }
 .composer { position:relative; isolation:isolate; border:1px solid var(--edge); border-radius:6px; padding:8px 9px 7px; z-index:2 }
 .composer::before { content:''; position:absolute; inset:0; z-index:-1; pointer-events:none; border-radius:inherit; background:var(--glass); -webkit-backdrop-filter:blur(10px); backdrop-filter:blur(10px) }
 .composer:focus-within { border-color:var(--accent) }
