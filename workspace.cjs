@@ -47,13 +47,37 @@ async function worktree(root,task,storage){
 }
 // Relative to the selected project (which can be a subfolder), not the Git top level.
 const NO_ATTACHMENT_COPIES=':(exclude,literal).orbit-attachments';
+// Git flushes the same ordered diff queue as NUL-delimited raw records and then
+// as patch blocks. Check every header against its exact raw path before pairing.
+function quotedDiffPath(prefix,file){
+ const escapes={'\x07':'\\a','\b':'\\b','\t':'\\t','\n':'\\n','\x0b':'\\v','\f':'\\f','\r':'\\r','"':'\\"','\\':'\\\\'};
+ const name=prefix+file;
+ return /[\x00-\x1f\x7f"\\]/.test(name)?'"'+name.replace(/[\x00-\x1f\x7f"\\]/g,c=>escapes[c]??'\\'+c.charCodeAt(0).toString(8).padStart(3,'0'))+'"':name;
+}
+function reviewDiff(output){
+ if(!output)return [];
+ const boundary=output.indexOf('\0\0');
+ if(boundary<0)throw new Error('无法可靠匹配 Git 补丁与文件。');
+ const fields=output.slice(0,boundary).split('\0');
+ const patches=output.slice(boundary+2).split(/(?<=\n)(?=diff --git )/);
+ const bad=()=>new Error('无法可靠匹配 Git 补丁与文件。');
+ if(fields.length!==patches.length*2)throw bad();
+ const seen=new Set();
+ return patches.map((patch,i)=>{
+  const raw=fields[i*2].match(/^:[0-7]{6} [0-7]{6} [0-9a-f]+ [0-9a-f]+ ([A-Z])$/),path=fields[i*2+1];
+  const header=patch.slice(0,patch.indexOf('\n'));
+  if(!raw||!path||seen.has(path)||header!=='diff --git '+quotedDiffPath('a/',path)+' '+quotedDiffPath('b/',path))throw bad();
+  seen.add(path);return {path,status:raw[1],patch};
+ });
+}
 async function review(cwd,base){
- const args=['-c','core.quotePath=false','diff','--no-ext-diff','--no-textconv','--no-color','--no-renames'];
+ const args=['--no-optional-locks','-c','core.quotePath=false','diff','--raw','-z','--patch','--no-ext-diff','--no-textconv',
+  '--no-color','--no-renames','--no-relative','--submodule=short','--src-prefix=a/','--dst-prefix=b/'];
  if(base&&!validCommit(base))throw new Error('无效的审阅基线');
  const results=await Promise.allSettled([
-  base?git(cwd,[...args,'--name-status',base,'--',NO_ATTACHMENT_COPIES]):Promise.resolve(''),
-  git(cwd,['--no-optional-locks','-c','core.quotePath=false','status','--short','--untracked-files=normal','--no-renames','--',NO_ATTACHMENT_COPIES]),
+  git(cwd,['--no-optional-locks','status','--porcelain=v1','-z','--untracked-files=normal','--no-renames','--',NO_ATTACHMENT_COPIES]),
   git(cwd,['rev-parse','--abbrev-ref','HEAD']).catch(()=> ''),
+  git(cwd,['rev-parse','--show-prefix']),
   git(cwd,[...args,base||'HEAD','--',NO_ATTACHMENT_COPIES]).catch(async error=>{
    if(base)throw error;
    const hasHead=await git(cwd,['rev-parse','--verify','--quiet','HEAD']).then(()=>true,e=>{if(e.exitCode!==1)throw error;return false});
@@ -65,10 +89,18 @@ async function review(cwd,base){
   })
  ]);
  const failure=results.find(result=>result.status==='rejected');if(failure)throw failure.reason;
- const [local,status,branch,patch]=results.map(result=>result.value);
- const files=new Map(status.trimEnd().split('\n').filter(Boolean).map(s=>[s.slice(3),s]));
- for(const s of local.trimEnd().split('\n').filter(Boolean)){const [mode,file]=s.split('\t');if(file&&!files.has(file))files.set(file,mode.padEnd(2)+' '+file)}
- return {status:[...files.values()].join('\n'),patch,branch:branch.trim()};
+ const [status,branch,prefix,output]=results.map(result=>result.value);
+ const files=new Map(),baseDir=prefix.replace(/\r?\n$/,'')||'.';
+ for(const record of status.split('\0')){
+  const path=record.slice(3);
+  if(path)files.set(path,{path:p.posix.relative(baseDir,path)+(path.endsWith('/')?'/':''),status:record.slice(0,2).trim()});
+ }
+ for(const entry of reviewDiff(output)){
+  const previous=files.get(entry.path);
+  if(previous)previous.patch=entry.patch;
+  else if(base)files.set(entry.path,{...entry,path:p.posix.relative(baseDir,entry.path)});
+ }
+ return {files:[...files.values()],branch:branch.trim()};
 }
 async function exportPatch(cwd,base){
  if(!validCommit(base))throw new Error('没有有效的工作树基线。');
