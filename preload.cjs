@@ -20,7 +20,7 @@ contextBridge.exposeInMainWorld('orbit',{
  attach:kind=>ipcRenderer.invoke('attach',kind),
  pasteImage:(mime,bytes)=>ipcRenderer.invoke('paste-image',mime,bytes),
  forget:id=>ipcRenderer.invoke('forget',id),
- onDrop:(start,ok,fail)=>window.addEventListener('drop',e=>{if(!e.isTrusted||!e.dataTransfer?.files.length)return;e.preventDefault();const files=[...e.dataTransfer.files].map(f=>webUtils.getPathForFile(f)).filter(Boolean);if(files.length){const token=start();ipcRenderer.invoke('drop',files).then(result=>ok(result,token),e=>fail(e.message,token));}},true),
+ onDrop:(start,ok,fail)=>window.addEventListener('drop',e=>{if(!e.isTrusted||!e.dataTransfer?.files.length)return;e.preventDefault();const files=[...e.dataTransfer.files].map(f=>webUtils.getPathForFile(f)).filter(Boolean);if(files.length){const token=start();if(token==null)return;ipcRenderer.invoke('drop',files).then(result=>ok(result,token),e=>fail(e.message,token));}},true),
  stop:t=>ipcRenderer.invoke('stop',t),
  decide:(t,k,c)=>ipcRenderer.invoke('decide',t,k,c),
  diff:(t,c,isolated)=>ipcRenderer.invoke('diff',t,c,isolated),
