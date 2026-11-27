@@ -6,6 +6,37 @@ const svgNS='http://www.w3.org/2000/svg';
 function icon(n){const e=document.createElementNS(svgNS,'svg'),u=document.createElementNS(svgNS,'use');u.setAttribute('href','#i-'+n);e.append(u);return e}
 function el(tag,text,cls){const n=document.createElement(tag);if(text!=null)n.textContent=text;if(cls)n.className=cls;return n}
 const basename=p=>p?.split(/[\\/]/).filter(Boolean).at(-1)||'';
+const searchText=value=>String(value??'').normalize('NFC').toLowerCase();
+const searchPath=value=>searchText(value).replace(/\\/g,'/');
+function projectParents(paths){
+ const groups=new Map(),parents=new Map();
+ for(const path of new Set(paths.filter(Boolean))){
+  const leaf=searchText(basename(path));
+  if(!groups.has(leaf))groups.set(leaf,[]);
+  groups.get(leaf).push(path);
+ }
+ for(const paths of groups.values()){
+  if(paths.length<2)continue;
+  const segments=paths.map(path=>path.split(/[\\/]/).filter(Boolean).slice(0,-1));
+  const counts=new Map();
+  for(const parts of segments)for(let n=1;n<=parts.length;n++){
+   const suffix=searchText(parts.slice(-n).join('/'));counts.set(suffix,(counts.get(suffix)??0)+1);
+  }
+  paths.forEach((path,i)=>{
+   const parts=segments[i];let parent=path;
+   for(let n=1;n<=parts.length;n++){
+    const suffix=parts.slice(-n).join('/');
+    if(counts.get(searchText(suffix))===1){parent=suffix;break}
+   }
+   parents.set(path,parent);
+  });
+ }
+ return parents;
+}
+function projectLabel(path,parents){
+ const parent=parents.get(path);
+ return parent?basename(path)+' · '+parent:basename(path);
+}
 const storage=demo?'orbit07-preview':'orbit02-local';
 let data={projects:[],threads:[]};try{const d=JSON.parse(localStorage.getItem(storage)||'null');if(Array.isArray(d?.projects)&&Array.isArray(d?.threads))data=d}catch{}
 const sample='/Demo/Atelier';
@@ -87,7 +118,7 @@ function showHub(){
  });
  if(innerWidth<=640)sidebar(false);
 }
-function renderHub(){
+function renderHub(parents){
  if(view!=='home')return;
  const grid=$('hubTiles'),recent=$('hubRecents');grid.replaceChildren();recent.replaceChildren();
  const projects=data.projects.slice(0,30);
@@ -107,7 +138,11 @@ function renderHub(){
  $('hubQueue').textContent=running?running+' 个运行中':'';
  for(const t of data.threads.slice(0,7)){
   const r=el('button',null,'rec-row'),s=runtime(t.id),status=s.approvals.size?'待审批':s.running?'运行中':t.stamp;
-  r.append(icon('chat'),el('strong',t.title),el('span',basename(t.folder),'rec-project'),el('time',status??'',s.running||s.approvals.size?'live-state':''));
+  const label=el('strong',t.title),destination=projectLabel(t.folder,parents);
+  if(parents.has(t.folder))label.append(el('small',destination,'recent-project-narrow'));
+  r.title=t.folder??'';
+  if(parents.has(t.folder))r.setAttribute('aria-label',[t.title,destination,status].filter(Boolean).join(' · '));
+  r.append(icon('chat'),label,el('span',destination,'rec-project'),el('time',status??'',s.running||s.approvals.size?'live-state':''));
   r.onclick=()=>go(t);recent.append(r)
  }
  if(!recent.childElementCount)recent.append(el('p','还没有会话。','empty-list'));
@@ -122,30 +157,40 @@ async function pickProject(s){
 function sidebar(show){app.classList.toggle('no-side',!show);$('expand').hidden=show}
 function opensSidebar(){sidebar(true);$('searchWrap').hidden=false;$('search').focus()}
 function renderSidebar(){
- const root=$('projects'),q=$('search').value.trim().toLowerCase();root.replaceChildren();
- const groups=data.projects.filter(p=>!q||basename(p.path).toLowerCase().includes(q)||data.threads.some(t=>t.folder===p.path&&t.title.toLowerCase().includes(q)));
- for(const p of groups){
+ const root=$('projects'),q=searchPath($('search').value.trim());root.replaceChildren();
+ const parents=projectParents([...data.projects.map(p=>p.path),...data.threads.map(t=>t.folder)]),groups=[];
+ for(const p of data.projects){
+  const projectMatch=!q||searchPath(p.path).includes(q);
+  const threads=data.threads.filter(t=>t.folder===p.path&&(projectMatch||searchPath(t.title).includes(q)));
+  if(projectMatch||threads.length)groups.push({p,threads});
+ }
+ for(const {p,threads} of groups){
   const group=el('section',null,'project-group'),row=el('div',null,'project-row');
   if(p.path===folder){row.classList.add('project-active');if(current)row.classList.add('has-thread')}
+  const label=projectLabel(p.path,parents),parent=parents.get(p.path);
   const main=el('button',null,'project-title');main.title=p.path;main.textContent=basename(p.path);
+  if(parent){main.append(el('small',parent,'project-parent'));main.setAttribute('aria-label',label)}
   main.onclick=()=>go(data.threads.find(t=>t.folder===p.path)??null,p.path);
-  const plus=el('button',null,'new-small');plus.title='在 '+basename(p.path)+' 新建会话';plus.setAttribute('aria-label',plus.title);plus.append(icon('plus'));plus.onclick=()=>go(null,p.path,null,true);
+  const plus=el('button',null,'new-small');plus.title='在 '+label+' 新建会话';plus.setAttribute('aria-label',plus.title);plus.append(icon('plus'));plus.onclick=()=>go(null,p.path,null,true);
   row.append(icon('folder'),main,plus);group.append(row);
-  for(const t of data.threads.filter(t=>t.folder===p.path&&(!q||basename(p.path).toLowerCase().includes(q)||t.title.toLowerCase().includes(q)))){
-   const b=el('button',null,'thread'+(current===t?' selected':''));b.title=t.title;
+  for(const t of threads){
+   const b=el('button',null,'thread'+(current===t?' selected':''));b.title=parent?t.title+' · '+p.path:t.title;
    const st=runtime(t.id);const live=st.approvals.size?'待审批':st.running?'运行中':t.isolated?'工作树':'';
+   if(parent)b.setAttribute('aria-label',[t.title,label,live||t.stamp].filter(Boolean).join(' · '));
    b.append(el('span',t.title),el('time',live||t.stamp||'',live?'thread-status':''));b.onclick=()=>go(t);group.append(b);
   }
   root.append(group);
  }
  if(!groups.length)root.append(el('div',q?'没有匹配的会话':'尚未打开项目','project-empty'));
- $('projectName').textContent=view==='home'?'Orbite':basename(folder)||'Orbite';
+ const destination=projectLabel(folder,parents);
+ $('projectName').textContent=view==='home'?'Orbite':destination||'Orbite';
+ $('projectName').title=view==='home'?'':folder??'';
  $('taskTitle').textContent=view==='home'?'工作台':current?.title||'新建会话';
- $('routeProject').textContent=basename(folder)||'会话';
+ $('routeProject').textContent=destination||'会话';$('routeProject').title=folder??'';
  $('routeTitle').textContent=current?.title||'新建会话';
  $('routeMarker').replaceChildren(icon(folder?'folder':'chat'));
- renderHub();
- $('scopeName').textContent=basename(folder)||'未选择项目';
+ renderHub(parents);
+ $('scopeName').textContent=destination||'未选择项目';$('scopeName').title=folder??'';
  $('emptyText').textContent=folder?'':'选择项目后开始。';
  $('emptyPick').hidden=!!folder;
 }
