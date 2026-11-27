@@ -413,6 +413,11 @@ function assigned(isolated=false){
 async function connect(allowAuth=false){
  let s=runtime();if(s.session)return true;if(s.connecting||s.submitting||!demo&&!api)return false;
  s.connecting=true;buttons();setStatus('连接中…');s.error='';$('dialogStatus').textContent='';
+ if(!demo&&api?.requireCli){
+  try{await api.requireCli()}catch(e){
+   s.connecting=false;settings();notice(e);setStatus('待连接');buttons();return false;
+  }
+ }
  let id=key();
  try{
   if(!await authorize())return false;
@@ -585,6 +590,11 @@ document.querySelectorAll('[data-tab]').forEach(b=>b.onclick=()=>{
 });
 $('setup').onclick=settings;
 $('auth').onclick=async()=>{if(demo){closeDlg('settings');return}if(await connect(true))closeDlg('settings')};
+if(api?.cliDocs){
+ const guide=el('button','官方安装指南','secondary');guide.id='cliDocs';
+ guide.onclick=async()=>{try{await api.cliDocs()}catch(e){notice(e)}};
+ $('cliText').after(guide);
+}
 $('selectExe').onclick=async()=>{
  const id=key(),s=runtime(id);
  try{if(api&&await api.executable()){

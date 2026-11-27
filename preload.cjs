@@ -2,6 +2,8 @@ const {contextBridge,ipcRenderer,webUtils}=require('electron');
 contextBridge.exposeInMainWorld('orbit',{
  pick:s=>ipcRenderer.invoke('pick',s),
  executable:()=>ipcRenderer.invoke('executable'),
+ requireCli:()=>ipcRenderer.invoke('cli-preflight'),
+ cliDocs:()=>ipcRenderer.invoke('cli-docs'),
  computerUse:()=>ipcRenderer.invoke('computer-use'),
  cuaProbe:()=>ipcRenderer.invoke('cua-local-probe'),
  cuaTest:()=>ipcRenderer.invoke('cua-local-test'),

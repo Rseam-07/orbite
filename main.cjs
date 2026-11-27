@@ -57,11 +57,14 @@ ipc('cua-local-probe',()=>localCua(file=>cua.diagnose(file)));
 ipc('cua-local-test',()=>localCua(file=>{if(!file)throw new Error('没有找到 Cua Driver。');return cua.selfTest(file)}));
 ipc('cua-local-grant',()=>localCua(file=>{if(!file)throw new Error('没有找到 Cua Driver。');return cua.grant(file)}));
 ipc('cua-docs',()=>shell.openExternal('https://cua.ai/docs/cua-driver/quickstart'));
+ipc('cli-preflight',()=>{exe();return true});
+ipc('cli-docs',()=>shell.openExternal('https://antigravity.google/docs/getting-started?tab=cli'));
 ipc('disconnect',task=>{if(busy(runners.get(task)))throw new Error('请先停止当前回合。');close(task)});
 ipc('worktree',async(task,root)=>{
  if(!roots.has(root)||!validId(task))throw new Error('请先通过文件选择器授权项目。');
  if(scopes.has(task))return scopes.get(task);
  if(creating.has(task))throw new Error('正在准备工作树。');
+ exe(); // The CLI is also checked at actual connection time.
  creating.add(task);
  try{
   const homes=path.join(app.getPath('userData'),'worktrees');await fs.promises.mkdir(homes,{mode:0o700,recursive:true});
@@ -72,19 +75,21 @@ ipc('worktree',async(task,root)=>{
 ipc('connect',async(task,root,id,enableExtension,isolated)=>{
  if(!validId(task)||!roots.has(root))throw new Error('请先用「打开项目」授权目录。');
  if(busy(runners.get(task)))throw new Error('当前会话正在运行。');
+ const cli=exe();
  const scope=isolated?scopes.get(task):{root,dir:root};
  if(!scope||scope.root!==root)throw new Error('请先准备工作树。');
  if(enableExtension&&!driver())throw new Error('请先在扩展中选取已安装的 Cua Driver。');
  close(task);limit();
  const mcp=enableExtension?[{name:'cua-driver',command:computerUsePath,args:['mcp'],env:[]}]:[];
- const runner=new Engine({exe:exe(),cwd:scope.dir,emit:e=>{
+ const runner=new Engine({exe:cli,cwd:scope.dir,emit:e=>{
   if(runners.get(task)!==runner)return;
   if(e.type==='offline')cancelPreparation(runner);
   send(task,e);
  }});
  runners.set(task,runner);runner.connecting=true;
  try{
-  await runner.init();if(runners.get(task)!==runner)throw new Error('连接已退出');
+  try{await runner.init()}catch(e){throw Object.assign(new Error('已找到 Antigravity CLI，但未能启动或完成 ACP 初始化。请在终端运行 agy acp --help 检查版本，必要时重新选择可执行文件。'),{code:e?.code})}
+  if(runners.get(task)!==runner)throw new Error('连接已退出');
   runner.requestedSession=id??null;runner.extensions=mcp;
   try{return {session:await runner.open(runner.requestedSession,mcp)}}
   catch(e){
