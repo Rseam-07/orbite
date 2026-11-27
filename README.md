@@ -58,7 +58,7 @@ Antigravity 能干活，坐在它前面的人不该跟着费劲。拖一个文�
 2. 打开 Orbite 的「扩展 → 检测本机」。Orbite 查找安装的驱动，进行真实的 MCP 握手、列出工具，并从驱动读取辅助功能/录屏状态。检测本身不会截屏，也不会要求授权。自动找不到时可选取 `cua-driver`。
 3. 需要权限时点「打开授权流程」，按 macOS 指引在系统设置确认。授权给谁以驱动报告和系统提示为准；新权限可能要重启 CuaDriver。完成后再次检测。
 4. 两项权限都开启后，点「运行官方自测」。它调用 `cua-driver test --json`，由驱动实际检查屏幕并在后台 TextEdit 测试输入，不保存文稿。只有通过，面板才会显示「自测通过」。这个自测不需要 Google 账户，但它成功不意味着 Antigravity 已连接。
-5. 打开项目，勾选「将 Cua Driver 接到当前会话」，点「填入只读联调指令」，再自行发送。它要求 Antigravity 仅调用 `check_permissions`（`prompt:false`）。在「审阅 → 活动」确认确实出现了对应工具的完成事件，**不要只把模型的文字当作成功证据**。如果驱动自测成功但没有工具事件，先核对本机 `agy` 版本与 [Google ACP 文档](https://antigravity.google/docs/ide/extensions/acp/)；也可以选择按 Cua Driver 文档的官方全局接入方式配置，但 Orbite 不替你改全局设置。
+5. 打开项目，勾选「将 Cua Driver 接到当前会话」，驱动确实公布只读检查后，「反重力联调」才会显示「待验证」。点「填入只读联调指令」，再自行发送。它要求 Antigravity 仅调用 `check_permissions`（`prompt:false`）。在「审阅 → 活动」确认确实出现了对应工具的完成事件，**不要只把模型的文字当作成功证据**。如果驱动自测成功但没有工具事件，先核对本机 `agy` 版本与 [Google ACP 文档](https://antigravity.google/docs/ide/extensions/acp/)；也可以选择按 Cua Driver 文档的官方全局接入方式配置，但 Orbite 不替你改全局设置。
 
 会话启用默认关闭，切换到其它会话不会自动继承。每次只允许一个由 Orbite 明确启用桌面控制的回合运行。驱动或 CLI 已存在的全局权限、MCP 和可见应用不归 Orbite 的开关管理。后台动作并非每种窗口都能完成，不保证与 Codex 同样的工具面和权限行为。
 

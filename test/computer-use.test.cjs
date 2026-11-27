@@ -11,7 +11,7 @@ async function binary(t){
 }
 test('MCP discovery negotiates versions and follows tool pagination',async()=>{
  const x=await mcpInventory(process.execPath,{args:[fixture,'mcp']});
- assert.equal(x.protocol,'2025-06-18');assert.equal(x.tools,4);assert.deepEqual(x.missing,[]);
+ assert.equal(x.protocol,'2025-06-18');assert.equal(x.tools,5);assert.deepEqual(x.missing,[]);assert.equal(x.readonlyPermissions,true);
 });
 test('reports missing driver tools without passing its health check',async()=>{
  const x=await mcpInventory(process.execPath,{args:[fixture,'missing']});assert.deepEqual(x.missing,['get_window_state','click','type_text']);
@@ -20,10 +20,18 @@ test('reports missing driver tools without passing its health check',async()=>{
 test('version, permission attribution and official self-test are independent states',{skip:process.platform==='win32'},async t=>{
  const exe=await binary(t);
  const r=await diagnose(exe,'darwin');
- assert.equal(r.version,'0.40.1');assert.equal(r.mcp.tools,4);
+ assert.equal(r.version,'0.40.1');assert.equal(r.mcp.tools,5);assert.equal(r.mcp.readonlyPermissions,true);
  assert.deepEqual(r.permissions,{accessibility:true,screen:false,capturable:null,source:'driver-daemon'});
  assert.deepEqual(readPermission({permissions:{accessibility:'true'}}),{accessibility:null,screen:null,capturable:null,source:null});
  assert.equal((await grant(exe,'darwin')).ok,false);
  assert.equal((await selfTest(exe,'linux')).ok,false);
  assert.equal((await selfTest(exe,'darwin')).ok,true);
+});
+
+test('only a catalog with a boolean prompt argument enables the read-only permissions check',async()=>{
+ for(const mode of ['no-permission-tool','ambiguous-permission-tool']){
+  const x=await mcpInventory(process.execPath,{args:[fixture,mode]});
+  assert.deepEqual(x.missing,[],'core desktop actions stay independent of the permissions probe');
+  assert.equal(x.readonlyPermissions,false);
+ }
 });
