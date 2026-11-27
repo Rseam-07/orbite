@@ -50,7 +50,7 @@ const NO_ATTACHMENT_COPIES=':(exclude,literal).orbit-attachments';
 async function review(cwd,base){
  const args=['-c','core.quotePath=false','diff','--no-ext-diff','--no-textconv','--no-color','--no-renames'];
  if(base&&!validCommit(base))throw new Error('无效的审阅基线');
- const [local,status,branch,patch]=await Promise.all([
+ const results=await Promise.allSettled([
   base?git(cwd,[...args,'--name-status',base,'--',NO_ATTACHMENT_COPIES]):Promise.resolve(''),
   git(cwd,['--no-optional-locks','-c','core.quotePath=false','status','--short','--untracked-files=normal','--no-renames','--',NO_ATTACHMENT_COPIES]),
   git(cwd,['rev-parse','--abbrev-ref','HEAD']).catch(()=> ''),
@@ -64,6 +64,8 @@ async function review(cwd,base){
    return git(cwd,[...args,empty,'--',NO_ATTACHMENT_COPIES]);
   })
  ]);
+ const failure=results.find(result=>result.status==='rejected');if(failure)throw failure.reason;
+ const [local,status,branch,patch]=results.map(result=>result.value);
  const files=new Map(status.trimEnd().split('\n').filter(Boolean).map(s=>[s.slice(3),s]));
  for(const s of local.trimEnd().split('\n').filter(Boolean)){const [mode,file]=s.split('\t');if(file&&!files.has(file))files.set(file,mode.padEnd(2)+' '+file)}
  return {status:[...files.values()].join('\n'),patch,branch:branch.trim()};

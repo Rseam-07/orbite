@@ -32,7 +32,10 @@ jobs:
       - run: npm test
       - run: node build-preview.cjs
       - if: runner.os == 'Linux'
-        run: xvfb-run -a npm run package -- linux x64 --smoke
+        run: |
+          npm run package -- linux x64
+          sudo dpkg -i dist/artifacts/*.deb
+          timeout 30s xvfb-run -a /opt/orbite/Orbite --orbite-package-smoke
       - if: runner.os != 'Linux'
         run: npm run package -- ${{ matrix.platform }} ${{ matrix.arch }} --smoke
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

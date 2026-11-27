@@ -104,7 +104,7 @@ test('review from a repository subfolder excludes only its own generated attachm
 
 test('workspace review includes staged and working edits before the first commit without writing the index',async t=>{
  const source=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbite-unborn-review-'));
- t.after(()=>fs.rm(source,{force:true,recursive:true}));
+ t.after(()=>fs.rm(source,{force:true,recursive:true,maxRetries:5,retryDelay:80}));
  await git(source,['init','-q']);await git(source,['config','core.autocrlf','false']);
  await fs.writeFile(p.join(source,'staged.txt'),'staged content\n');
  await fs.writeFile(p.join(source,'edited.txt'),'staged previous version\n');
