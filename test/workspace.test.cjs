@@ -3,12 +3,16 @@ const assert=require('node:assert/strict');
 const fs=require('node:fs/promises');
 const os=require('node:os');
 const p=require('node:path');
-const {git,worktree,review,exportPatch}=require('../workspace.cjs');
+const {git,worktree,review:reviewFiles,exportPatch}=require('../workspace.cjs');
+async function review(cwd,base){
+ const result=await reviewFiles(cwd,base);
+ return {...result,status:result.files.map(f=>f.status.padEnd(2)+' '+f.path).join('\n'),patch:result.files.map(f=>f.patch??'').join('')};
+}
 async function fixture(t){
  const dir=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbit-test-'));t.after(()=>fs.rm(dir,{force:true,recursive:true}));
  const source=p.join(dir,'repo'),storage=p.join(dir,'worktrees');await fs.mkdir(source);await fs.mkdir(storage);
  const file=p.join(source,'资料.txt');
- await git(source,['init','-q']);await fs.writeFile(file,'baseline\n');await git(source,['add','.']);
+ await git(source,['init','-q']);await git(source,['config','core.autocrlf','false']);await fs.writeFile(file,'baseline\n');await git(source,['add','.']);
  await git(source,['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','baseline']);
  return {source,storage,file};
 }
@@ -104,8 +108,8 @@ test('review from a repository subfolder excludes only its own generated attachm
 
 test('workspace review includes staged and working edits before the first commit without writing the index',async t=>{
  const source=await fs.mkdtemp(p.join(await fs.realpath(os.tmpdir()),'orbite-unborn-review-'));
- t.after(()=>fs.rm(source,{force:true,recursive:true}));
- await git(source,['init','-q']);
+ t.after(()=>fs.rm(source,{force:true,recursive:true,maxRetries:5,retryDelay:80}));
+ await git(source,['init','-q']);await git(source,['config','core.autocrlf','false']);
  await fs.writeFile(p.join(source,'staged.txt'),'staged content\n');
  await fs.writeFile(p.join(source,'edited.txt'),'staged previous version\n');
  await fs.mkdir(p.join(source,'.orbit-attachments'));
@@ -124,4 +128,44 @@ test('workspace review includes staged and working edits before the first commit
  assert.deepEqual(await fs.readFile(index),before);
  await assert.rejects(git(source,['rev-parse','--verify','HEAD']));
  await assert.rejects(review(source,'1'.repeat(40)));
+});
+
+test('Git review binds NUL-delimited file paths to their own patches in a subfolder',async t=>{
+ const {source,file}=await fixture(t),project=p.join(source,'project');
+ await fs.mkdir(p.join(project,'archive b'),{recursive:true});
+ const changed=[
+  ['archive b/report.txt','nested fixture'],
+  ['report.txt','root fixture'],
+  ['中文 空格.txt','Unicode fixture'],
+  ...(process.platform==='win32'?[]:[['notes -> report.txt','literal arrow fixture'],['中文\t续行\n文件.txt','literal newline fixture']])
+ ];
+ for(const [name] of changed)await fs.writeFile(p.join(project,name),'before\n');
+ await fs.writeFile(p.join(project,'deleted.txt'),'original delete fixture\n');
+ await git(source,['add','--','.']);
+ await git(source,['-c','user.name=Test','-c','user.email=test@example.invalid','commit','-qm','fixture files']);
+ await git(source,['config','diff.noprefix','true']);
+ await git(source,['config','diff.relative','true']);
+ for(const [name,marker] of changed)await fs.writeFile(p.join(project,name),marker+'\n');
+ await fs.rm(p.join(project,'deleted.txt'));
+ await fs.writeFile(p.join(project,'added.txt'),'added fixture\n');await git(source,['add','--','project/added.txt']);
+ await fs.writeFile(p.join(project,'untracked.txt'),'no patch fixture\n');
+ await fs.writeFile(file,'sibling fixture\n');
+ const head=await git(source,['rev-parse','HEAD']);
+ const config=await fs.readFile(p.join(source,'.git','config'));
+ const index=await fs.readFile(p.join(source,'.git','index'));
+ const result=await reviewFiles(project);
+ const byPath=new Map(result.files.map(entry=>[entry.path,entry]));
+ for(const [name,marker] of changed){
+  const lines=byPath.get(name)?.patch.split('\n')??[];
+  assert.deepEqual(lines.filter(line=>/^\+[^+]/.test(line)),['+'+marker],name);
+ }
+ assert.match(byPath.get('deleted.txt').patch,/^-original delete fixture$/m);
+ assert.match(byPath.get('added.txt').patch,/^\+added fixture$/m);
+ assert.equal(byPath.get('untracked.txt').status,'??');
+ assert.equal(byPath.get('untracked.txt').patch,undefined);
+ assert.match(byPath.get('../'+p.basename(file)).patch,/^\+sibling fixture$/m);
+ assert.equal(result.files.length,changed.length+4);
+ assert.deepEqual(await fs.readFile(p.join(source,'.git','index')),index);
+ assert.deepEqual(await fs.readFile(p.join(source,'.git','config')),config);
+ assert.equal(await git(source,['rev-parse','HEAD']),head);
 });
