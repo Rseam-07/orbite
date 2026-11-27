@@ -18,3 +18,15 @@ test('failed Finder batches leave no invisible attachment IDs and can be retried
  assert.deepEqual(added.map(a=>registry.get(a.id)),[file,folder]);
  assert.equal(registry.size,3);
 });
+
+test('oversized selections reject atomically instead of silently taking the first 16',async t=>{
+ const dir=await fs.mkdtemp(path.join(await fs.realpath(os.tmpdir()),'orbite-selection-limit-'));
+ t.after(()=>fs.rm(dir,{recursive:true,force:true}));
+ const paths=Array.from({length:17},(_,i)=>path.join(dir,'file-'+i+'.txt'));
+ await Promise.all(paths.map(file=>fs.writeFile(file,'test')));
+ const registry=new Map([['previous',paths[16]]]);
+ await assert.rejects(registerPaths(paths,registry),/最多选择 16.*本次未添加/);
+ assert.deepEqual([...registry],[['previous',paths[16]]]);
+ assert.equal((await registerPaths(paths.slice(0,16),registry)).length,16);
+ assert.equal(registry.size,17);
+});

@@ -131,3 +131,19 @@ test('desktop distinguishes disconnect during copy from disconnect after handing
  assert.equal(await fs.readFile(prompts[0].files[0].path,'utf8'),'draft');
  await assert.rejects(api.prompt('example','work',[id]),/附件已失效/);
 });
+
+test('desktop picker and drop report oversized batches without returning a partial selection',async t=>{
+ const {api,tmp,drop,setPick}=await desktop(t);
+ const paths=Array.from({length:17},(_,i)=>path.join(tmp,'file-'+i+'.txt'));
+ await Promise.all(paths.map(file=>fs.writeFile(file,'test')));
+ setPick({filePaths:paths});
+ await assert.rejects(api.attach('file'),/最多选择 16.*本次未添加/);
+ const received=new Promise(resolve=>{
+  api.onDrop(()=>17,(files,id)=>resolve({files,id}),(error,id)=>resolve({error,id}));
+  drop()({isTrusted:true,dataTransfer:{files:paths.map(selectedPath=>({selectedPath}))},preventDefault(){}});
+ });
+ const result=await received;
+ assert.equal(result.id,17);assert.equal(result.files,undefined);assert.match(result.error,/最多选择 16.*本次未添加/);
+ setPick({filePaths:paths.slice(0,16)});
+ assert.equal((await api.attach('file')).length,16,'the user can retry with a selection within the limit');
+});
