@@ -34,7 +34,8 @@ jobs:
       - if: runner.os == 'Linux'
         run: |
           npm run package -- linux x64
-          sudo dpkg -i dist/artifacts/*.deb
+          sudo apt-get update
+          sudo apt-get install -y ./dist/artifacts/*.deb
           timeout 30s xvfb-run -a /opt/orbite/Orbite --orbite-package-smoke
       - if: runner.os != 'Linux'
         run: npm run package -- ${{ matrix.platform }} ${{ matrix.arch }} --smoke
