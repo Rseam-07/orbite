@@ -15,6 +15,7 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDropEvent>
 #include <QFileDialog>
 #include <QFocusEvent>
 #include <QFontDatabase>
@@ -58,6 +59,55 @@
 
 namespace orbite {
 namespace {
+
+QStringList localAttachmentPaths(const QMimeData *data)
+{
+    QStringList paths;
+    for (const auto &url : data->urls()) {
+        if (url.isLocalFile())
+            paths << url.toLocalFile();
+    }
+    return paths;
+}
+
+bool acceptAttachmentCopy(QDropEvent *event)
+{
+    if (!event->possibleActions().testFlag(Qt::CopyAction)) {
+        event->ignore();
+        return false;
+    }
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    return true;
+}
+
+class ComposerFrame : public QFrame {
+public:
+    using QFrame::QFrame;
+    std::function<void(const QStringList &)> dropFiles;
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override { dragMoveEvent(event); }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (dropFiles && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            event->ignore();
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        const auto paths = localAttachmentPaths(event->mimeData());
+        if (!dropFiles || paths.isEmpty()) {
+            event->ignore();
+            return;
+        }
+        if (acceptAttachmentCopy(event))
+            dropFiles(paths);
+    }
+};
 
 class ComposerEdit : public QPlainTextEdit {
 public:
@@ -115,6 +165,33 @@ protected:
             focusChanged(false);
     }
 
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        if (attachments && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            QPlainTextEdit::dragEnterEvent(event);
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (attachments && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            QPlainTextEdit::dragMoveEvent(event);
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        const auto paths = localAttachmentPaths(event->mimeData());
+        if (attachments && !paths.isEmpty()) {
+            if (acceptAttachmentCopy(event))
+                attachments(paths, {});
+        } else {
+            QPlainTextEdit::dropEvent(event);
+        }
+    }
+
     bool canInsertFromMimeData(const QMimeData *data) const override
     {
         return data->hasUrls() || data->hasImage() || QPlainTextEdit::canInsertFromMimeData(data);
@@ -122,11 +199,7 @@ protected:
 
     void insertFromMimeData(const QMimeData *data) override
     {
-        QStringList paths;
-        for (const auto &url : data->urls()) {
-            if (url.isLocalFile())
-                paths << url.toLocalFile();
-        }
+        const auto paths = localAttachmentPaths(data);
         const auto image = paths.isEmpty() ? qvariant_cast<QImage>(data->imageData()) : QImage();
         if ((!paths.isEmpty() || !image.isNull()) && attachments)
             attachments(paths, image);
@@ -417,7 +490,9 @@ Window::Window(Controller &controller)
     queued->addWidget(runQueued_);
     workLayout->addWidget(queuedCard_);
 
-    composer_ = new QFrame(work);
+    auto *composerFrame = new ComposerFrame(work);
+    composerFrame->dropFiles = [this](const auto &paths) { appendFiles(paths, {}); };
+    composer_ = composerFrame;
     composer_->setObjectName("composerCard");
     auto *composerLayout = new QVBoxLayout(composer_);
     composerLayout->setContentsMargins(10, 9, 10, 9);
@@ -430,7 +505,7 @@ Window::Window(Controller &controller)
     auto *edit = new ComposerEdit(composer_);
     edit->setObjectName("composerEdit");
     edit->setFixedHeight(73);
-    edit->setPlaceholderText("描述你的任务…");
+    edit->setPlaceholderText("描述你的任务，或拖入文件和文件夹…");
     edit->focusChanged = [this](bool focused) {
         composer_->setProperty("focused", focused);
         composer_->style()->unpolish(composer_);
@@ -876,6 +951,7 @@ void Window::syncThread()
         input_->moveCursor(QTextCursor::End);
     }
     const bool editable = !thread->archived && run.phase != Phase::Preparing;
+    composer_->setAcceptDrops(editable);
     input_->setEnabled(editable);
     add_->setEnabled(editable);
     if (displayedFiles_ != thread->draft.files || changed)

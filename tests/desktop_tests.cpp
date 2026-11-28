@@ -5,9 +5,11 @@
 #include <QClipboard>
 #include <QCompleter>
 #include <QDir>
+#include <QDropEvent>
 #include <QLabel>
 #include <QListWidget>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QTabWidget>
 #include <QFile>
 #include <QPlainTextEdit>
@@ -15,6 +17,7 @@
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QToolButton>
+#include <QUrl>
 #include <QtTest>
 
 using namespace orbite;
@@ -200,6 +203,85 @@ private slots:
         const auto saved = profile.threads().value(first);
         QVERIFY(saved.interrupted);
         QCOMPARE(saved.queued.text, "下一次再发");
+    }
+
+    void composerAcceptsFileAndFolderDropsAsCopy()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        const auto workspace = root + "/Project";
+        const auto other = root + "/Other project";
+        const auto folder = workspace + "/附件 folder";
+        const auto file = workspace + "/file [1].txt";
+        QVERIFY(QDir().mkpath(folder + "/nested"));
+        QVERIFY(QDir().mkpath(other));
+        for (const auto &path : {file, folder + "/nested/同名.txt"}) {
+            QFile contents(path);
+            QVERIFY(contents.open(QIODevice::WriteOnly));
+            QCOMPARE(contents.write("fixture"), qint64(7));
+        }
+
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        Window window(controller);
+        window.show();
+        window.openPath(workspace);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty());
+        auto *frame = window.findChild<QWidget *>("composerCard");
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(frame && editor);
+        editor->setPlainText("Keep the unsent draft");
+
+        const auto verifyDrop = [](QWidget *target, const QMimeData &mime,
+                                   Qt::DropActions actions, bool canCopy) {
+            const QPoint point(2, 2);
+            QDragEnterEvent enter(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &enter);
+            QCOMPARE(enter.isAccepted(), canCopy);
+            if (!canCopy)
+                return;
+            QCOMPARE(enter.dropAction(), Qt::CopyAction);
+            QDragMoveEvent move(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &move);
+            QVERIFY(move.isAccepted());
+            QCOMPARE(move.dropAction(), Qt::CopyAction);
+            QDropEvent drop(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &drop);
+            QVERIFY(drop.isAccepted());
+            QCOMPARE(drop.dropAction(), Qt::CopyAction);
+        };
+
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(file), QUrl::fromLocalFile(folder),
+                      QUrl::fromLocalFile(file), QUrl("https://example.test/remote")});
+        verifyDrop(frame, mime, Qt::MoveAction, false);
+        verifyDrop(editor->viewport(), mime, Qt::MoveAction, false);
+        QVERIFY(controller.thread(id)->draft.files.isEmpty());
+        verifyDrop(frame, mime, Qt::CopyAction | Qt::MoveAction, true);
+        const QStringList expected{QFileInfo(file).canonicalFilePath(), QFileInfo(folder).canonicalFilePath()};
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        verifyDrop(editor->viewport(), mime, Qt::CopyAction | Qt::MoveAction, true);
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        QCOMPARE(editor->toPlainText(), "Keep the unsent draft");
+        QVERIFY(controller.thread(id)->messages.isEmpty());
+        QVERIFY(QFileInfo::exists(file));
+        QVERIFY(QFileInfo::exists(folder + "/nested/同名.txt"));
+
+        QMimeData remote;
+        remote.setUrls({QUrl("https://example.test/remote")});
+        verifyDrop(frame, remote, Qt::CopyAction, false);
+
+        window.openPath(other);
+        QVERIFY(window.currentId() != id);
+        QVERIFY(controller.thread(window.currentId())->draft.empty());
+        window.openPath(workspace);
+        QCOMPARE(window.currentId(), id);
+        QCOMPARE(editor->toPlainText(), "Keep the unsent draft");
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        window.close();
+        QCOMPARE(profile.threads().value(id).draft.files, expected);
     }
 
     void clipboardScreenshotPersistsWithDraft()
