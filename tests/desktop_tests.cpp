@@ -5,8 +5,10 @@
 #include <QAction>
 #include <QClipboard>
 #include <QCompleter>
+#include <QDebug>
 #include <QDir>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QListWidget>
 #include <QLineEdit>
@@ -20,8 +22,43 @@
 #include <QToolButton>
 #include <QUrl>
 #include <QtTest>
+#include <algorithm>
 
 using namespace orbite;
+
+class FlipPaintProbe : public QObject {
+public:
+    QElapsedTimer clock;
+    QList<qint64> paints;
+
+    void reset()
+    {
+        paints.clear();
+        clock.start();
+    }
+
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::Paint && clock.isValid())
+            paints.append(clock.elapsed());
+        return false;
+    }
+
+    void report(const char *direction) const
+    {
+        QList<qint64> gaps;
+        for (qsizetype i = 1; i < paints.size(); ++i)
+            gaps.append(paints.at(i) - paints.at(i - 1));
+        std::sort(gaps.begin(), gaps.end());
+        if (!gaps.isEmpty()) {
+            qInfo().nospace() << "Qt X11 flip " << direction << ": "
+                              << paints.size() << " paint events, first at "
+                              << paints.first() << " ms, median gap "
+                              << gaps.at(gaps.size() / 2) << " ms, max gap "
+                              << gaps.last() << " ms";
+        }
+    }
+};
 
 class DesktopTests : public QObject {
     Q_OBJECT
@@ -204,6 +241,50 @@ private slots:
         const auto saved = profile.threads().value(first);
         QVERIFY(saved.interrupted);
         QCOMPARE(saved.queued.text, "下一次再发");
+    }
+
+    void workbenchFlipPaintsBothDirectionsOnX11()
+    {
+        if (!qEnvironmentVariableIsSet("ORBITE_VERIFY_X11_FLIP"))
+            QSKIP("Runs separately on an X11 test desktop.");
+        QCOMPARE(QGuiApplication::platformName(), "xcb");
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        applyTheme("light");
+        Window window(controller);
+        window.resize(1100, 720);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        auto *flip = window.findChild<QWidget *>("pageFlip");
+        auto *home = window.findChild<QPushButton *>("workbenchButton");
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(flip && home && editor);
+        FlipPaintProbe probe;
+        flip->installEventFilter(&probe);
+
+        probe.reset();
+        window.openPath(root);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty() && editor->isVisible());
+        QVERIFY2(flip->isVisible(), "The forward flip did not start on the X11 test surface.");
+        QTRY_VERIFY_WITH_TIMEOUT(!flip->isVisible(), 1200);
+        probe.report("forward");
+        QVERIFY2(probe.paints.size() >= 2, "No intermediate frames were painted.");
+
+        editor->setPlainText("unsent draft");
+        probe.reset();
+        QTest::mouseClick(home, Qt::LeftButton);
+        QVERIFY(window.currentId().isEmpty());
+        QVERIFY2(flip->isVisible(), "The reverse flip did not start on the X11 test surface.");
+        QTRY_VERIFY_WITH_TIMEOUT(!flip->isVisible(), 1200);
+        probe.report("reverse");
+        QVERIFY2(probe.paints.size() >= 2, "No intermediate frames were painted.");
+        QCOMPARE(controller.thread(id)->draft.text, "unsent draft");
     }
 
     void reducedMotionKeepsWorkbenchNavigationImmediate()

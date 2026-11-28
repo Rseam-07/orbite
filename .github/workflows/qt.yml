@@ -62,6 +62,10 @@ jobs:
           cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release
           cmake --build build --parallel
           ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Measure the workbench flip on the X11 test desktop
+        run: |
+          QT_QPA_PLATFORM=xcb QT_SCALE_FACTOR=1 ORBITE_VERIFY_X11_FLIP=1 \
+            xvfb-run -a -s '-screen 0 1440x900x24' build/orbite_desktop_tests workbenchFlipPaintsBothDirectionsOnX11
       - name: Build and extract a portable Ubuntu package
         run: |
           work="$RUNNER_TEMP/orbite-linux-package"
