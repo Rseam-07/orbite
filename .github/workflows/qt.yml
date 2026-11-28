@@ -106,13 +106,34 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           ctest --test-dir build -C Release --output-on-failure --no-tests=error
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-      - name: Open a window and initialize an isolated profile
+      - name: Build and extract a portable package
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'Orbite Windows Packaging QA'
+          New-Item -ItemType Directory -Path (Join-Path $work 'stage'), (Join-Path $work 'extracted') -ErrorAction Stop | Out-Null
+          $exe = Join-Path $work 'stage/Orbite.exe'
+          Copy-Item ./build/Release/Orbite.exe -Destination $exe
+          Copy-Item ./LICENSE, ./licenses/Qt-LGPL-3.0.txt, ./licenses/Qt-GPL-3.0.txt -Destination (Split-Path $exe)
+          & (Join-Path $env:QT_ROOT_DIR 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime $exe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $zip = Join-Path $work 'Orbite-windows-x64-qa.zip'
+          Compress-Archive -Path (Join-Path $work 'stage/*') -DestinationPath $zip
+          Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $work 'extracted')
+          foreach ($file in 'Orbite.exe', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Sql.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'LICENSE', 'Qt-LGPL-3.0.txt') {
+            if (-not (Test-Path -LiteralPath (Join-Path $work "extracted/$file") -PathType Leaf)) { throw "Package is missing $file" }
+          }
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
+          Write-Output "Windows QA ZIP SHA-256: $sha"
+      - name: Open the extracted package without Qt SDK paths
         shell: pwsh
         run: |
           $profileDir = Join-Path $env:RUNNER_TEMP ("orbite-smoke-" + [Guid]::NewGuid().ToString("N"))
           $process = $null
           try {
-            $process = Start-Process -FilePath ./build/Release/Orbite.exe -ArgumentList "--profile `"$profileDir`"" -PassThru
+            $exe = Join-Path $env:RUNNER_TEMP 'Orbite Windows Packaging QA/extracted/Orbite.exe'
+            Get-ChildItem Env: | Where-Object { $_.Name -match '^QT_|^QML' } | ForEach-Object { Remove-Item -LiteralPath ('Env:' + $_.Name) }
+            $env:Path = (Join-Path $env:SystemRoot 'System32') + ';' + $env:SystemRoot
+            $process = Start-Process -FilePath $exe -ArgumentList "--profile `"$profileDir`"" -PassThru -WorkingDirectory (Split-Path $exe)
             $started = $false
             for ($i = 0; $i -lt 40; $i++) {
               $process.Refresh()
