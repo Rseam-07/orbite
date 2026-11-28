@@ -66,9 +66,11 @@ jobs:
         run: |
           profile_dir="$(mktemp -d)"
           trap 'rm -rf -- "$profile_dir"' EXIT
-          xvfb-run -a bash -euo pipefail -s -- "$profile_dir" <<'BASH'
+          ldd "$QT_ROOT_DIR/plugins/platforms/libqxcb.so"
+          xvfb-run -a -e /dev/stderr bash -euo pipefail -s -- "$profile_dir" <<'BASH'
           profile_dir="$1"
-          QT_QPA_PLATFORM=xcb ./build/Orbite --profile "$profile_dir" &
+          xdotool getdisplaygeometry
+          QT_DEBUG_PLUGINS=1 QT_QPA_PLATFORM=xcb ./build/Orbite --profile "$profile_dir" &
           app_pid=$!
           trap 'kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true' EXIT
           for ((i=0; i<40; ++i)); do
