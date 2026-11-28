@@ -173,21 +173,24 @@ jobs:
           $exe = Join-Path $work 'stage/Orbite.exe'
           Copy-Item ./build/Release/Orbite.exe -Destination $exe
           Copy-Item ./LICENSE, ./licenses/Qt-LGPL-3.0.txt, ./licenses/Qt-GPL-3.0.txt -Destination (Split-Path $exe)
+          Copy-Item ./docs/windows-qa-readme.txt -Destination (Join-Path (Split-Path $exe) 'README-FIRST.txt')
           # The profile uses QSQLITE exclusively; keep the platform and SQLite plugins.
-          & (Join-Path $env:QT_ROOT_DIR 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime --exclude-plugins 'qsqlmimer,qsqlodbc,qsqlpsql' $exe
+          & (Join-Path $env:QT_ROOT_DIR 'bin/windeployqt.exe') --release --no-translations --no-compiler-runtime --no-system-d3d-compiler --exclude-plugins 'qsqlmimer,qsqlodbc,qsqlpsql' $exe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $zip = Join-Path $work 'Orbite-windows-x64-qa.zip'
           Compress-Archive -Path (Join-Path $work 'stage/*') -DestinationPath $zip
           Expand-Archive -LiteralPath $zip -DestinationPath (Join-Path $work 'extracted')
-          foreach ($file in 'Orbite.exe', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Sql.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'LICENSE', 'Qt-LGPL-3.0.txt') {
+          foreach ($file in 'Orbite.exe', 'Qt6Core.dll', 'Qt6Widgets.dll', 'Qt6Sql.dll', 'platforms/qwindows.dll', 'sqldrivers/qsqlite.dll', 'LICENSE', 'Qt-LGPL-3.0.txt', 'Qt-GPL-3.0.txt', 'README-FIRST.txt') {
             if (-not (Test-Path -LiteralPath (Join-Path $work "extracted/$file") -PathType Leaf)) { throw "Package is missing $file" }
           }
           $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
           Write-Output "Windows QA ZIP SHA-256: $sha"
+          "$sha  $(Split-Path -Leaf $zip)" | Set-Content -LiteralPath "$zip.sha256" -Encoding ascii
           $extracted = Join-Path $work 'extracted'
           foreach ($plugin in 'qsqlmimer.dll', 'qsqlodbc.dll', 'qsqlpsql.dll') {
             if (Test-Path -LiteralPath (Join-Path $extracted "sqldrivers/$plugin")) { throw "Unexpected SQL driver in ZIP: $plugin" }
           }
+          if (Test-Path -LiteralPath (Join-Path $extracted 'D3Dcompiler_47.dll')) { throw 'Unexpected system Direct3D compiler in ZIP' }
           Write-Output 'Windows package file inventory:'
           Get-ChildItem -LiteralPath $extracted -File -Recurse -ErrorAction Stop |
             ForEach-Object { [IO.Path]::GetRelativePath($extracted, $_.FullName) } |
@@ -221,3 +224,26 @@ jobs:
             }
             if (Test-Path -LiteralPath $profileDir) { Remove-Item -LiteralPath $profileDir -Recurse -Force }
           }
+
+      - name: Verify corresponding Qt Base source for the test download
+        shell: pwsh
+        run: |
+          $work = Join-Path $env:RUNNER_TEMP 'Orbite Windows Packaging QA'
+          $version = (& (Join-Path $env:QT_ROOT_DIR 'bin/qmake.exe') -query QT_VERSION)
+          if ($LASTEXITCODE -ne 0 -or $version -ne '6.8.3') { throw 'No matched source archive for the Qt build' }
+          $source = Join-Path $work 'qtbase-everywhere-src-6.8.3.tar.xz'
+          & curl.exe --fail --silent --show-error --location --proto '=https' --proto-redir '=https' --retry 2 --max-time 120 --output $source 'https://download.qt.io/archive/qt/6.8/6.8.3/submodules/qtbase-everywhere-src-6.8.3.tar.xz'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $source).Hash.ToLowerInvariant()
+          if ($sha -ne '56001b905601bb9023d399f3ba780d7fa940f3e4861e496a7c490331f49e0b80') { throw 'Qt Base source SHA-256 mismatch' }
+      - name: Retain the tested Windows ZIP and corresponding sources
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: Orbite-Windows-x64-CI-test
+          compression-level: 0
+          retention-days: 7
+          if-no-files-found: error
+          path: |
+            ${{ runner.temp }}/Orbite Windows Packaging QA/Orbite-windows-x64-qa.zip
+            ${{ runner.temp }}/Orbite Windows Packaging QA/Orbite-windows-x64-qa.zip.sha256
+            ${{ runner.temp }}/Orbite Windows Packaging QA/qtbase-everywhere-src-6.8.3.tar.xz
