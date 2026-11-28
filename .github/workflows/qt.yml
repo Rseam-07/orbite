@@ -40,3 +40,93 @@ jobs:
         with:
           name: Orbite-macOS-${{ matrix.arch }}
           path: dist/Orbite-*.dmg*
+
+  linux:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: '6.8.3'
+          arch: linux_gcc_64
+          archives: qtbase
+          install-deps: 'false'
+      - name: Set up the X11 test desktop
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends xvfb xauth xdotool libxcb-cursor0 libxkbcommon-x11-0 libxcb-icccm4 libxcb-image0 libxcb-keysyms1 libxcb-render-util0 libxcb-xinerama0 libgl1
+      - name: Configure, build, and test
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_PREFIX_PATH="$QT_ROOT_DIR" -DCMAKE_BUILD_TYPE=Release
+          cmake --build build --parallel
+          ctest --test-dir build --output-on-failure --no-tests=error
+      - name: Open a window and initialize an isolated profile
+        run: |
+          profile_dir="$(mktemp -d)"
+          trap 'rm -rf -- "$profile_dir"' EXIT
+          xvfb-run -a bash -euo pipefail -s -- "$profile_dir" <<'BASH'
+          profile_dir="$1"
+          QT_QPA_PLATFORM=xcb ./build/Orbite --profile "$profile_dir" &
+          app_pid=$!
+          trap 'kill "$app_pid" 2>/dev/null || true; wait "$app_pid" 2>/dev/null || true' EXIT
+          for ((i=0; i<40; ++i)); do
+            kill -0 "$app_pid" 2>/dev/null || { echo 'Orbite exited early' >&2; exit 1; }
+            if test -s "$profile_dir/orbite.sqlite3" &&
+                xdotool search --onlyvisible --pid "$app_pid" --all --name '^Orbite$' >/dev/null; then
+              exit 0
+            fi
+            sleep 0.25
+          done
+          echo 'Orbite window or initialized profile not found' >&2
+          exit 1
+          BASH
+
+  windows:
+    runs-on: windows-2025
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - uses: jurplel/install-qt-action@b344308e4483fc892e0d27b3cd1b173ebdd95f06 # v4.5.0
+        with:
+          version: '6.8.3'
+          arch: win64_msvc2022_64
+          archives: qtbase
+          install-deps: 'false'
+      - name: Configure, build, and test
+        shell: pwsh
+        run: |
+          cmake -S . -B build -G 'Visual Studio 17 2022' -A x64 "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR" '-DCMAKE_CXX_FLAGS=/utf-8'
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build --config Release --parallel
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          ctest --test-dir build -C Release --output-on-failure --no-tests=error
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+      - name: Open a window and initialize an isolated profile
+        shell: pwsh
+        run: |
+          $profileDir = Join-Path $env:RUNNER_TEMP ("orbite-smoke-" + [Guid]::NewGuid().ToString("N"))
+          $process = $null
+          try {
+            $process = Start-Process -FilePath ./build/Release/Orbite.exe -ArgumentList "--profile `"$profileDir`"" -PassThru
+            $started = $false
+            for ($i = 0; $i -lt 40; $i++) {
+              $process.Refresh()
+              if ($process.HasExited) { throw "Orbite exited early: $($process.ExitCode)" }
+              $db = Get-Item (Join-Path $profileDir 'orbite.sqlite3') -ErrorAction SilentlyContinue
+              if ($process.MainWindowHandle -ne [IntPtr]::Zero -and $process.MainWindowTitle -ceq "Orbite" -and $db -and $db.Length -gt 0) {
+                $started = $true
+                break
+              }
+              Start-Sleep -Milliseconds 250
+            }
+            if (-not $started) { throw 'Orbite window or initialized profile not found' }
+          } finally {
+            if ($process -and -not $process.HasExited) {
+              Stop-Process -Id $process.Id -Force
+              $process.WaitForExit()
+            }
+            if (Test-Path -LiteralPath $profileDir) { Remove-Item -LiteralPath $profileDir -Recurse -Force }
+          }
