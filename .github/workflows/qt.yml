@@ -64,7 +64,7 @@ jobs:
           ctest --test-dir build --output-on-failure --no-tests=error
       - name: Measure the workbench flip on the X11 test desktop
         run: |
-          QT_QPA_PLATFORM=xcb QT_SCALE_FACTOR=1 ORBITE_VERIFY_X11_FLIP=1 \
+          QT_QPA_PLATFORM=xcb QT_SCALE_FACTOR=1 QT_LOGGING_RULES=orbite.motion.debug=true ORBITE_VERIFY_X11_FLIP=1 \
             xvfb-run -a -s '-screen 0 1440x900x24' build/orbite_desktop_tests workbenchFlipPaintsBothDirectionsOnX11
       - name: Build and extract a portable Ubuntu package
         run: |

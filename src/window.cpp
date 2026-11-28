@@ -32,6 +32,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLoggingCategory>
 #include <QMenu>
 #include <QMenuBar>
 #include <QPainter>
@@ -66,6 +67,8 @@
 namespace orbite {
 namespace {
 
+Q_LOGGING_CATEGORY(pageMotionLog, "orbite.motion", QtWarningMsg)
+
 // Render two bounded snapshots, not two live widget hierarchies per frame.
 class PageFlip : public QWidget {
 public:
@@ -89,6 +92,8 @@ public:
 
     void cancel()
     {
+        if (isVisible())
+            qCDebug(pageMotionLog) << "overlay hide at progress" << progress_;
         timeline_.stop();
         hide();
         from_ = {};
@@ -98,8 +103,11 @@ public:
     void start(QPixmap from, QPixmap to, bool forward)
     {
         if (from.isNull() || to.isNull() || from.size() != to.size() ||
-            from.devicePixelRatio() != to.devicePixelRatio())
+            from.devicePixelRatio() != to.devicePixelRatio()) {
+            qCDebug(pageMotionLog) << "incompatible snapshots" << from.size() << from.devicePixelRatio()
+                                   << to.size() << to.devicePixelRatio();
             return;
+        }
         from_ = std::move(from);
         to_ = std::move(to);
         direction_ = forward ? 1.0 : -1.0;
@@ -107,6 +115,7 @@ public:
         setGeometry(parentWidget()->rect());
         raise();
         show();
+        qCDebug(pageMotionLog) << "overlay started" << isVisible() << forward;
         timeline_.start();
     }
 
@@ -148,9 +157,13 @@ public:
     bool wantsFlip(int index) const
     {
         const auto dpr = devicePixelRatioF();
+        const auto duration = style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, this);
+        if (currentIndex() != index)
+            qCDebug(pageMotionLog) << "eligibility" << currentIndex() << index << isVisible()
+                                   << window()->isMinimized() << size() << dpr << duration;
         return currentIndex() != index && isVisible() && !window()->isMinimized() &&
             width() >= 240 && height() >= 200 && width() * qreal(height()) * dpr * dpr <= 5000000 &&
-            style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, this) > 0;
+            duration > 0;
     }
 
     void startFlip(QPixmap from, QPixmap to, bool forward)
@@ -947,9 +960,14 @@ void Window::selectThread(const QString &id)
     QPixmap previous;
     if (id != current_ || stack->currentIndex() != nextPage)
         stack->cancelFlip();
-    if (stack->wantsFlip(nextPage) && controller_.setting("reduceMotion") != "true") {
-        capture.start();
-        previous = stack->grab();
+    if (stack->wantsFlip(nextPage)) {
+        if (controller_.setting("reduceMotion") == "true") {
+            qCDebug(pageMotionLog) << "reduced motion";
+        } else {
+            capture.start();
+            previous = stack->grab();
+            qCDebug(pageMotionLog) << "source grab ms" << capture.elapsed() << previous.size();
+        }
     }
     current_ = id;
     if (const auto *thread = controller_.thread(id))
@@ -957,13 +975,17 @@ void Window::selectThread(const QString &id)
     action([this, id] { controller_.setSetting("selected", id); });
     syncThread();
     scheduleTranscript();
+    if (capture.isValid())
+        qCDebug(pageMotionLog) << "after page sync ms" << capture.elapsed() << stack->currentIndex();
     if (!previous.isNull() && capture.elapsed() < 42 && stack->currentIndex() == nextPage) {
         if (nextPage == 1 && transcript_->isVisible()) {
             transcriptTimer_.stop();
             renderTranscript();
         }
+        qCDebug(pageMotionLog) << "before destination capture ms" << capture.elapsed();
         if (capture.elapsed() < 42) {
             auto next = stack->grab();
+            qCDebug(pageMotionLog) << "destination grab complete ms" << capture.elapsed() << next.size();
             if (capture.elapsed() < 42)
                 stack->startFlip(std::move(previous), std::move(next), nextPage == 1);
         }
