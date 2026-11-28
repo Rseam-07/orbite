@@ -956,8 +956,10 @@ void Window::selectThread(const QString &id)
 {
     auto *stack = static_cast<PageStack *>(pages_);
     const int nextPage = controller_.thread(id) ? 1 : 0;
+    constexpr qint64 extraPaintBudgetMs = 24;
     QElapsedTimer capture;
     QPixmap previous;
+    qint64 sourceMs = 0;
     if (id != current_ || stack->currentIndex() != nextPage)
         stack->cancelFlip();
     if (stack->wantsFlip(nextPage)) {
@@ -966,7 +968,8 @@ void Window::selectThread(const QString &id)
         } else {
             capture.start();
             previous = stack->grab();
-            qCDebug(pageMotionLog) << "source grab ms" << capture.elapsed() << previous.size();
+            sourceMs = capture.elapsed();
+            qCDebug(pageMotionLog) << "source grab ms" << sourceMs << previous.size();
         }
     }
     current_ = id;
@@ -975,21 +978,28 @@ void Window::selectThread(const QString &id)
     action([this, id] { controller_.setSetting("selected", id); });
     syncThread();
     scheduleTranscript();
-    if (capture.isValid())
-        qCDebug(pageMotionLog) << "after page sync ms" << capture.elapsed() << stack->currentIndex();
-    if (!previous.isNull() && capture.elapsed() < 42 && stack->currentIndex() == nextPage) {
-        if (nextPage == 1 && transcript_->isVisible()) {
-            transcriptTimer_.stop();
-            renderTranscript();
-        }
-        qCDebug(pageMotionLog) << "before destination capture ms" << capture.elapsed();
-        if (capture.elapsed() < 42) {
-            auto next = stack->grab();
-            qCDebug(pageMotionLog) << "destination grab complete ms" << capture.elapsed() << next.size();
-            if (capture.elapsed() < 42)
-                stack->startFlip(std::move(previous), std::move(next), nextPage == 1);
-        }
+    if (!capture.isValid())
+        return;
+
+    // Switching and populating the live page is required even without motion.
+    // Budget only the extra work for animation, not that unavoidable navigation.
+    const auto navigationMs = capture.restart() - sourceMs;
+    qCDebug(pageMotionLog) << "live navigation ms" << navigationMs << stack->currentIndex();
+    if (previous.isNull() || sourceMs >= extraPaintBudgetMs || stack->currentIndex() != nextPage)
+        return;
+    if (nextPage == 1 && transcript_->isVisible()) {
+        transcriptTimer_.stop();
+        renderTranscript();
     }
+    if (sourceMs + capture.elapsed() >= extraPaintBudgetMs) {
+        qCDebug(pageMotionLog) << "animation budget exceeded before destination capture";
+        return;
+    }
+    auto next = stack->grab();
+    const auto extraMs = sourceMs + capture.elapsed();
+    qCDebug(pageMotionLog) << "total extra animation preparation ms" << extraMs << next.size();
+    if (extraMs < extraPaintBudgetMs)
+        stack->startFlip(std::move(previous), std::move(next), nextPage == 1);
 }
 
 void Window::rebuildNavigation()
