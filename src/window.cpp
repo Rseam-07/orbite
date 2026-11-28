@@ -41,7 +41,6 @@
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
-#include <QResizeEvent>
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QShortcut>
@@ -75,6 +74,7 @@ public:
     explicit PageFlip(QWidget *parent) : QWidget(parent)
     {
         setObjectName("pageFlip");
+        parent->installEventFilter(this);
         setAttribute(Qt::WA_TransparentForMouseEvents);
         setAttribute(Qt::WA_OpaquePaintEvent);
         setFocusPolicy(Qt::NoFocus);
@@ -120,6 +120,13 @@ public:
     }
 
 protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == parentWidget() && (event->type() == QEvent::Resize || event->type() == QEvent::Hide))
+            cancel();
+        return false;
+    }
+
     void paintEvent(QPaintEvent *) override
     {
         QPainter paint(this);
@@ -150,32 +157,31 @@ private:
 
 class PageStack : public QStackedWidget {
 public:
-    explicit PageStack(QWidget *parent) : QStackedWidget(parent), flip_(new PageFlip(this)) {}
+    explicit PageStack(QWidget *parent) : QStackedWidget(parent), flip_(new PageFlip(parent)) {}
 
     void cancelFlip() { flip_->cancel(); }
 
+    // Include the header in the same surface. The header has different heights
+    // on the workbench and in a conversation, but the surrounding pane is stable.
+    QPixmap captureSurface() const { return parentWidget()->grab(); }
+
     bool wantsFlip(int index) const
     {
-        const auto dpr = devicePixelRatioF();
+        const auto *surface = parentWidget();
+        const auto dpr = surface->devicePixelRatioF();
+        const auto extent = surface->size();
         const auto duration = style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, this);
         if (currentIndex() != index)
             qCDebug(pageMotionLog) << "eligibility" << currentIndex() << index << isVisible()
-                                   << window()->isMinimized() << size() << dpr << duration;
+                                   << window()->isMinimized() << extent << dpr << duration;
         return currentIndex() != index && isVisible() && !window()->isMinimized() &&
-            width() >= 240 && height() >= 200 && width() * qreal(height()) * dpr * dpr <= 5000000 &&
-            duration > 0;
+            extent.width() >= 240 && extent.height() >= 200 &&
+            extent.width() * qreal(extent.height()) * dpr * dpr <= 5000000 && duration > 0;
     }
 
     void startFlip(QPixmap from, QPixmap to, bool forward)
     {
         flip_->start(std::move(from), std::move(to), forward);
-    }
-
-protected:
-    void resizeEvent(QResizeEvent *event) override
-    {
-        cancelFlip();
-        QStackedWidget::resizeEvent(event);
     }
 
 private:
@@ -967,7 +973,7 @@ void Window::selectThread(const QString &id)
             qCDebug(pageMotionLog) << "reduced motion";
         } else {
             capture.start();
-            previous = stack->grab();
+            previous = stack->captureSurface();
             sourceMs = capture.elapsed();
             qCDebug(pageMotionLog) << "source grab ms" << sourceMs << previous.size();
         }
@@ -995,7 +1001,7 @@ void Window::selectThread(const QString &id)
         qCDebug(pageMotionLog) << "animation budget exceeded before destination capture";
         return;
     }
-    auto next = stack->grab();
+    auto next = stack->captureSurface();
     const auto extraMs = sourceMs + capture.elapsed();
     qCDebug(pageMotionLog) << "total extra animation preparation ms" << extraMs << next.size();
     if (extraMs < extraPaintBudgetMs)
