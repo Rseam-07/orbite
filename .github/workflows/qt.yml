@@ -96,6 +96,18 @@ jobs:
           tar -C "$stage" -czf "$work/Orbite-ubuntu-x64-qa.tar.gz" .
           tar -C "$extracted" -xzf "$work/Orbite-ubuntu-x64-qa.tar.gz"
           sha256sum "$work/Orbite-ubuntu-x64-qa.tar.gz"
+          echo 'Ubuntu package file inventory:'
+          tar -tzf "$work/Orbite-ubuntu-x64-qa.tar.gz" | LC_ALL=C sort
+          echo 'Linux ABI requirements (version needs only; not an OS support claim):'
+          for elf in "$extracted/bin/Orbite" "$extracted"/lib/* "$extracted"/plugins/*/*.so; do
+            requirements="$(readelf --version-info --wide "$elf" |
+              awk '/^Version .* section/ { needs = ($0 ~ /^Version needs section/) }
+                   needs && /Name: (GLIBC_|GLIBCXX_|CXXABI_)/ {
+                     for (i = 1; i < NF; i++)
+                       if ($i == "Name:") print $(i + 1)
+                   }' | LC_ALL=C sort -u | paste -sd ' ' -)"
+            printf '%s: %s\n' "${elf#"$extracted/"}" "${requirements:-(no tagged glibc/libstdc++ requirements)}"
+          done
           export LD_LIBRARY_PATH="$extracted/lib"
           {
             ldd "$extracted/bin/Orbite"
@@ -167,6 +179,11 @@ jobs:
           }
           $sha = (Get-FileHash -Algorithm SHA256 -LiteralPath $zip).Hash.ToLowerInvariant()
           Write-Output "Windows QA ZIP SHA-256: $sha"
+          $extracted = Join-Path $work 'extracted'
+          Write-Output 'Windows package file inventory:'
+          Get-ChildItem -LiteralPath $extracted -File -Recurse -ErrorAction Stop |
+            ForEach-Object { [IO.Path]::GetRelativePath($extracted, $_.FullName) } |
+            Sort-Object | Write-Output
       - name: Open the extracted package without Qt SDK paths
         shell: pwsh
         run: |
