@@ -2,6 +2,7 @@
 #include "window.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QClipboard>
 #include <QCompleter>
 #include <QDir>
@@ -203,6 +204,41 @@ private slots:
         const auto saved = profile.threads().value(first);
         QVERIFY(saved.interrupted);
         QCOMPARE(saved.queued.text, "下一次再发");
+    }
+
+    void reducedMotionKeepsWorkbenchNavigationImmediate()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        Window window(controller);
+        window.resize(1100, 720);
+        window.show();
+        auto *option = window.findChild<QAction *>("reduceMotion");
+        auto *flip = window.findChild<QWidget *>("pageFlip");
+        QVERIFY(option && flip && option->isCheckable());
+        option->setChecked(true);
+        QCOMPARE(controller.setting("reduceMotion"), "true");
+        window.openPath(root);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty());
+        QVERIFY(!flip->isVisible());
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(editor && editor->isVisible());
+        editor->setPlainText("retain this draft");
+        auto *home = window.findChild<QPushButton *>("workbenchButton");
+        QVERIFY(home);
+        QTest::mouseClick(home, Qt::LeftButton);
+        QVERIFY(window.currentId().isEmpty());
+        QVERIFY(!flip->isVisible());
+        window.openPath(root);
+        QCOMPARE(window.currentId(), id);
+        QCOMPARE(editor->toPlainText(), "retain this draft");
+        QVERIFY(!flip->isVisible());
+        Window restored(controller);
+        QVERIFY(restored.findChild<QAction *>("reduceMotion")->isChecked());
     }
 
     void composerAcceptsFileAndFolderDropsAsCopy()

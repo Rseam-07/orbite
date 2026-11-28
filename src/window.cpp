@@ -7,6 +7,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -16,6 +17,7 @@
 #include <QDialogButtonBox>
 #include <QDir>
 #include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFocusEvent>
 #include <QFontDatabase>
@@ -32,11 +34,13 @@
 #include <QListWidget>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPainter>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPlainTextEdit>
 #include <QPushButton>
 #include <QRegularExpression>
+#include <QResizeEvent>
 #include <QSaveFile>
 #include <QScrollBar>
 #include <QShortcut>
@@ -53,12 +57,117 @@
 #include <QTextDocumentFragment>
 #include <QTextFrame>
 #include <QToolButton>
+#include <QTransform>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QVariantAnimation>
 #include <QWidgetAction>
 
 namespace orbite {
 namespace {
+
+// Render two bounded snapshots, not two live widget hierarchies per frame.
+class PageFlip : public QWidget {
+public:
+    explicit PageFlip(QWidget *parent) : QWidget(parent)
+    {
+        setObjectName("pageFlip");
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_OpaquePaintEvent);
+        setFocusPolicy(Qt::NoFocus);
+        timeline_.setStartValue(0.0);
+        timeline_.setEndValue(1.0);
+        timeline_.setDuration(180);
+        timeline_.setEasingCurve(QEasingCurve::InOutCubic);
+        connect(&timeline_, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+            progress_ = value.toReal();
+            update();
+        });
+        connect(&timeline_, &QVariantAnimation::finished, this, &PageFlip::cancel);
+        hide();
+    }
+
+    void cancel()
+    {
+        timeline_.stop();
+        hide();
+        from_ = {};
+        to_ = {};
+    }
+
+    void start(QPixmap from, QPixmap to, bool forward)
+    {
+        if (from.isNull() || to.isNull() || from.size() != to.size() ||
+            from.devicePixelRatio() != to.devicePixelRatio())
+            return;
+        from_ = std::move(from);
+        to_ = std::move(to);
+        direction_ = forward ? 1.0 : -1.0;
+        progress_ = 0.0;
+        setGeometry(parentWidget()->rect());
+        raise();
+        show();
+        timeline_.start();
+    }
+
+protected:
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter paint(this);
+        paint.fillRect(rect(), palette().window());
+        const bool incoming = progress_ >= 0.5;
+        const auto &face = incoming ? to_ : from_;
+        // Switch faces at the edge of the same rotating plane, with no mirrored text.
+        const qreal angle = direction_ * (progress_ - (incoming ? 1.0 : 0.0)) * 180.0;
+        if (face.isNull() || qAbs(angle) >= 89.7)
+            return;
+        const QPointF center(width() * 0.5, height() * 0.5);
+        QTransform projection;
+        projection.translate(center.x(), center.y());
+        projection.rotate(angle, Qt::YAxis, qMax(1, width() * 2));
+        projection.translate(-center.x(), -center.y());
+        paint.setTransform(projection);
+        paint.setRenderHint(QPainter::SmoothPixmapTransform);
+        paint.drawPixmap(QPoint(0, 0), face);
+    }
+
+private:
+    QVariantAnimation timeline_;
+    QPixmap from_;
+    QPixmap to_;
+    qreal direction_ = 1.0;
+    qreal progress_ = 0.0;
+};
+
+class PageStack : public QStackedWidget {
+public:
+    explicit PageStack(QWidget *parent) : QStackedWidget(parent), flip_(new PageFlip(this)) {}
+
+    void cancelFlip() { flip_->cancel(); }
+
+    bool wantsFlip(int index) const
+    {
+        const auto dpr = devicePixelRatioF();
+        return currentIndex() != index && isVisible() && !window()->isMinimized() &&
+            width() >= 240 && height() >= 200 && width() * qreal(height()) * dpr * dpr <= 5000000 &&
+            style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, this) > 0;
+    }
+
+    void startFlip(QPixmap from, QPixmap to, bool forward)
+    {
+        flip_->start(std::move(from), std::move(to), forward);
+    }
+
+protected:
+    void resizeEvent(QResizeEvent *event) override
+    {
+        cancelFlip();
+        QStackedWidget::resizeEvent(event);
+    }
+
+private:
+    PageFlip *flip_;
+};
 
 QStringList localAttachmentPaths(const QMimeData *data)
 {
@@ -417,7 +526,7 @@ Window::Window(Controller &controller)
     heading->addLayout(headingRow);
     main->addWidget(header);
 
-    pages_ = new QStackedWidget(conversation);
+    pages_ = new PageStack(conversation);
     home_ = new Workbench(controller_, pages_);
     pages_->addWidget(home_);
 
@@ -616,6 +725,14 @@ Window::Window(Controller &controller)
     viewMenu->addAction("搜索会话", QKeySequence(Qt::CTRL | Qt::Key_K), search_, qOverload<>(&QLineEdit::setFocus));
     viewMenu->addAction("切换审阅", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R), this,
                         [this] { displayReview(review_->isHidden()); });
+    auto *reduceMotion = viewMenu->addAction("减少动态效果");
+    reduceMotion->setObjectName("reduceMotion");
+    reduceMotion->setCheckable(true);
+    reduceMotion->setChecked(controller_.setting("reduceMotion") == "true");
+    connect(reduceMotion, &QAction::toggled, this, [this](bool reduced) {
+        static_cast<PageStack *>(pages_)->cancelFlip();
+        action([this, reduced] { controller_.setSetting("reduceMotion", reduced ? "true" : "false"); });
+    });
     viewMenu->addAction("设置…", QKeySequence::Preferences, this, &Window::showSettings);
     menuBar()->addMenu("扩展")->addAction("Computer Use…", this, &Window::showExtension);
 
@@ -824,12 +941,33 @@ void Window::showHome()
 
 void Window::selectThread(const QString &id)
 {
+    auto *stack = static_cast<PageStack *>(pages_);
+    const int nextPage = controller_.thread(id) ? 1 : 0;
+    QElapsedTimer capture;
+    QPixmap previous;
+    if (id != current_ || stack->currentIndex() != nextPage)
+        stack->cancelFlip();
+    if (stack->wantsFlip(nextPage) && controller_.setting("reduceMotion") != "true") {
+        capture.start();
+        previous = stack->grab();
+    }
     current_ = id;
     if (const auto *thread = controller_.thread(id))
         project_ = thread->project;
     action([this, id] { controller_.setSetting("selected", id); });
     syncThread();
     scheduleTranscript();
+    if (!previous.isNull() && capture.elapsed() < 42 && stack->currentIndex() == nextPage) {
+        if (nextPage == 1 && transcript_->isVisible()) {
+            transcriptTimer_.stop();
+            renderTranscript();
+        }
+        if (capture.elapsed() < 42) {
+            auto next = stack->grab();
+            if (capture.elapsed() < 42)
+                stack->startFlip(std::move(previous), std::move(next), nextPage == 1);
+        }
+    }
 }
 
 void Window::rebuildNavigation()
