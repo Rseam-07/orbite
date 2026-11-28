@@ -2,12 +2,17 @@
 #include "window.h"
 
 #include <QAbstractItemView>
+#include <QAction>
 #include <QClipboard>
 #include <QCompleter>
+#include <QDebug>
 #include <QDir>
+#include <QDropEvent>
+#include <QElapsedTimer>
 #include <QLabel>
 #include <QListWidget>
 #include <QLineEdit>
+#include <QMimeData>
 #include <QTabWidget>
 #include <QFile>
 #include <QPlainTextEdit>
@@ -15,9 +20,45 @@
 #include <QTemporaryDir>
 #include <QTextBrowser>
 #include <QToolButton>
+#include <QUrl>
 #include <QtTest>
+#include <algorithm>
 
 using namespace orbite;
+
+class FlipPaintProbe : public QObject {
+public:
+    QElapsedTimer clock;
+    QList<qint64> paints;
+
+    void reset()
+    {
+        paints.clear();
+        clock.start();
+    }
+
+    bool eventFilter(QObject *, QEvent *event) override
+    {
+        if (event->type() == QEvent::Paint && clock.isValid())
+            paints.append(clock.elapsed());
+        return false;
+    }
+
+    void report(const char *direction) const
+    {
+        QList<qint64> gaps;
+        for (qsizetype i = 1; i < paints.size(); ++i)
+            gaps.append(paints.at(i) - paints.at(i - 1));
+        std::sort(gaps.begin(), gaps.end());
+        if (!gaps.isEmpty()) {
+            qInfo().nospace() << "Qt X11 flip " << direction << ": "
+                              << paints.size() << " paint events, first at "
+                              << paints.first() << " ms, median gap "
+                              << gaps.at(gaps.size() / 2) << " ms, max gap "
+                              << gaps.last() << " ms";
+        }
+    }
+};
 
 class DesktopTests : public QObject {
     Q_OBJECT
@@ -200,6 +241,164 @@ private slots:
         const auto saved = profile.threads().value(first);
         QVERIFY(saved.interrupted);
         QCOMPARE(saved.queued.text, "下一次再发");
+    }
+
+    void workbenchFlipPaintsBothDirectionsOnX11()
+    {
+        if (!qEnvironmentVariableIsSet("ORBITE_VERIFY_X11_FLIP"))
+            QSKIP("Runs separately on an X11 test desktop.");
+        QCOMPARE(QGuiApplication::platformName(), "xcb");
+
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        applyTheme("light");
+        Window window(controller);
+        window.resize(1100, 720);
+        window.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&window));
+
+        auto *flip = window.findChild<QWidget *>("pageFlip");
+        auto *home = window.findChild<QPushButton *>("workbenchButton");
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(flip && home && editor);
+        FlipPaintProbe probe;
+        flip->installEventFilter(&probe);
+
+        probe.reset();
+        window.openPath(root);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty() && editor->isVisible());
+        QVERIFY2(flip->isVisible(), "The forward flip did not start on the X11 test surface.");
+        QTRY_VERIFY_WITH_TIMEOUT(!flip->isVisible(), 1200);
+        probe.report("forward");
+        QVERIFY2(probe.paints.size() >= 2, "No intermediate frames were painted.");
+
+        editor->setPlainText("unsent draft");
+        probe.reset();
+        QTest::mouseClick(home, Qt::LeftButton);
+        QVERIFY(window.currentId().isEmpty());
+        QVERIFY2(flip->isVisible(), "The reverse flip did not start on the X11 test surface.");
+        QTRY_VERIFY_WITH_TIMEOUT(!flip->isVisible(), 1200);
+        probe.report("reverse");
+        QVERIFY2(probe.paints.size() >= 2, "No intermediate frames were painted.");
+        QCOMPARE(controller.thread(id)->draft.text, "unsent draft");
+    }
+
+    void reducedMotionKeepsWorkbenchNavigationImmediate()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        Window window(controller);
+        window.resize(1100, 720);
+        window.show();
+        auto *option = window.findChild<QAction *>("reduceMotion");
+        auto *flip = window.findChild<QWidget *>("pageFlip");
+        QVERIFY(option && flip && option->isCheckable());
+        option->setChecked(true);
+        QCOMPARE(controller.setting("reduceMotion"), "true");
+        window.openPath(root);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty());
+        QVERIFY(!flip->isVisible());
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(editor && editor->isVisible());
+        editor->setPlainText("retain this draft");
+        auto *home = window.findChild<QPushButton *>("workbenchButton");
+        QVERIFY(home);
+        QTest::mouseClick(home, Qt::LeftButton);
+        QVERIFY(window.currentId().isEmpty());
+        QVERIFY(!flip->isVisible());
+        window.openPath(root);
+        QCOMPARE(window.currentId(), id);
+        QCOMPARE(editor->toPlainText(), "retain this draft");
+        QVERIFY(!flip->isVisible());
+        Window restored(controller);
+        QVERIFY(restored.findChild<QAction *>("reduceMotion")->isChecked());
+    }
+
+    void composerAcceptsFileAndFolderDropsAsCopy()
+    {
+        QTemporaryDir temp;
+        QVERIFY(temp.isValid());
+        const auto root = QDir(temp.path()).canonicalPath();
+        const auto workspace = root + "/Project";
+        const auto other = root + "/Other project";
+        const auto folder = workspace + "/附件 folder";
+        const auto file = workspace + "/file [1].txt";
+        QVERIFY(QDir().mkpath(folder + "/nested"));
+        QVERIFY(QDir().mkpath(other));
+        for (const auto &path : {file, folder + "/nested/同名.txt"}) {
+            QFile contents(path);
+            QVERIFY(contents.open(QIODevice::WriteOnly));
+            QCOMPARE(contents.write("fixture"), qint64(7));
+        }
+
+        Profile profile(root + "/profile");
+        Controller controller(profile);
+        Window window(controller);
+        window.show();
+        window.openPath(workspace);
+        const auto id = window.currentId();
+        QVERIFY(!id.isEmpty());
+        auto *frame = window.findChild<QWidget *>("composerCard");
+        auto *editor = window.findChild<QPlainTextEdit *>("composerEdit");
+        QVERIFY(frame && editor);
+        editor->setPlainText("Keep the unsent draft");
+
+        const auto verifyDrop = [](QWidget *target, const QMimeData &mime,
+                                   Qt::DropActions actions, bool canCopy) {
+            const QPoint point(2, 2);
+            QDragEnterEvent enter(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &enter);
+            QCOMPARE(enter.isAccepted(), canCopy);
+            if (!canCopy)
+                return;
+            QCOMPARE(enter.dropAction(), Qt::CopyAction);
+            QDragMoveEvent move(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &move);
+            QVERIFY(move.isAccepted());
+            QCOMPARE(move.dropAction(), Qt::CopyAction);
+            QDropEvent drop(point, actions, &mime, Qt::LeftButton, Qt::ShiftModifier);
+            QApplication::sendEvent(target, &drop);
+            QVERIFY(drop.isAccepted());
+            QCOMPARE(drop.dropAction(), Qt::CopyAction);
+        };
+
+        QMimeData mime;
+        mime.setUrls({QUrl::fromLocalFile(file), QUrl::fromLocalFile(folder),
+                      QUrl::fromLocalFile(file), QUrl("https://example.test/remote")});
+        verifyDrop(frame, mime, Qt::MoveAction, false);
+        verifyDrop(editor->viewport(), mime, Qt::MoveAction, false);
+        QVERIFY(controller.thread(id)->draft.files.isEmpty());
+        verifyDrop(frame, mime, Qt::CopyAction | Qt::MoveAction, true);
+        const QStringList expected{QFileInfo(file).canonicalFilePath(), QFileInfo(folder).canonicalFilePath()};
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        verifyDrop(editor->viewport(), mime, Qt::CopyAction | Qt::MoveAction, true);
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        QCOMPARE(editor->toPlainText(), "Keep the unsent draft");
+        QVERIFY(controller.thread(id)->messages.isEmpty());
+        QVERIFY(QFileInfo::exists(file));
+        QVERIFY(QFileInfo::exists(folder + "/nested/同名.txt"));
+
+        QMimeData remote;
+        remote.setUrls({QUrl("https://example.test/remote")});
+        verifyDrop(frame, remote, Qt::CopyAction, false);
+
+        window.openPath(other);
+        QVERIFY(window.currentId() != id);
+        QVERIFY(controller.thread(window.currentId())->draft.empty());
+        window.openPath(workspace);
+        QCOMPARE(window.currentId(), id);
+        QCOMPARE(editor->toPlainText(), "Keep the unsent draft");
+        QCOMPARE(controller.thread(id)->draft.files, expected);
+        window.close();
+        QCOMPARE(profile.threads().value(id).draft.files, expected);
     }
 
     void clipboardScreenshotPersistsWithDraft()

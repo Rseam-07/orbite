@@ -7,6 +7,7 @@
 
 #include <QAbstractItemView>
 #include <QApplication>
+#include <QAction>
 #include <QCheckBox>
 #include <QCloseEvent>
 #include <QComboBox>
@@ -15,6 +16,8 @@
 #include <QDialog>
 #include <QDialogButtonBox>
 #include <QDir>
+#include <QDropEvent>
+#include <QElapsedTimer>
 #include <QFileDialog>
 #include <QFocusEvent>
 #include <QFontDatabase>
@@ -29,8 +32,10 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
+#include <QLoggingCategory>
 #include <QMenu>
 #include <QMenuBar>
+#include <QPainter>
 #include <QMessageBox>
 #include <QMimeData>
 #include <QPlainTextEdit>
@@ -52,12 +57,185 @@
 #include <QTextDocumentFragment>
 #include <QTextFrame>
 #include <QToolButton>
+#include <QTransform>
 #include <QTreeWidget>
 #include <QUrl>
+#include <QVariantAnimation>
 #include <QWidgetAction>
 
 namespace orbite {
 namespace {
+
+Q_LOGGING_CATEGORY(pageMotionLog, "orbite.motion", QtWarningMsg)
+
+// Render two bounded snapshots, not two live widget hierarchies per frame.
+class PageFlip : public QWidget {
+public:
+    explicit PageFlip(QWidget *parent) : QWidget(parent)
+    {
+        setObjectName("pageFlip");
+        parent->installEventFilter(this);
+        setAttribute(Qt::WA_TransparentForMouseEvents);
+        setAttribute(Qt::WA_OpaquePaintEvent);
+        setFocusPolicy(Qt::NoFocus);
+        timeline_.setStartValue(0.0);
+        timeline_.setEndValue(1.0);
+        timeline_.setDuration(180);
+        timeline_.setEasingCurve(QEasingCurve::InOutCubic);
+        connect(&timeline_, &QVariantAnimation::valueChanged, this, [this](const QVariant &value) {
+            progress_ = value.toReal();
+            update();
+        });
+        connect(&timeline_, &QVariantAnimation::finished, this, &PageFlip::cancel);
+        hide();
+    }
+
+    void cancel()
+    {
+        if (isVisible())
+            qCDebug(pageMotionLog) << "overlay hide at progress" << progress_;
+        timeline_.stop();
+        hide();
+        from_ = {};
+        to_ = {};
+    }
+
+    void start(QPixmap from, QPixmap to, bool forward)
+    {
+        if (from.isNull() || to.isNull() || from.size() != to.size() ||
+            from.devicePixelRatio() != to.devicePixelRatio()) {
+            qCDebug(pageMotionLog) << "incompatible snapshots" << from.size() << from.devicePixelRatio()
+                                   << to.size() << to.devicePixelRatio();
+            return;
+        }
+        from_ = std::move(from);
+        to_ = std::move(to);
+        direction_ = forward ? 1.0 : -1.0;
+        progress_ = 0.0;
+        setGeometry(parentWidget()->rect());
+        raise();
+        show();
+        qCDebug(pageMotionLog) << "overlay started" << isVisible() << forward;
+        timeline_.start();
+    }
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override
+    {
+        if (watched == parentWidget() && (event->type() == QEvent::Resize || event->type() == QEvent::Hide))
+            cancel();
+        return false;
+    }
+
+    void paintEvent(QPaintEvent *) override
+    {
+        QPainter paint(this);
+        paint.fillRect(rect(), palette().window());
+        const bool incoming = progress_ >= 0.5;
+        const auto &face = incoming ? to_ : from_;
+        // Switch faces at the edge of the same rotating plane, with no mirrored text.
+        const qreal angle = direction_ * (progress_ - (incoming ? 1.0 : 0.0)) * 180.0;
+        if (face.isNull() || qAbs(angle) >= 89.7)
+            return;
+        const QPointF center(width() * 0.5, height() * 0.5);
+        QTransform projection;
+        projection.translate(center.x(), center.y());
+        projection.rotate(angle, Qt::YAxis, qMax(1, width() * 2));
+        projection.translate(-center.x(), -center.y());
+        paint.setTransform(projection);
+        paint.setRenderHint(QPainter::SmoothPixmapTransform);
+        paint.drawPixmap(QPoint(0, 0), face);
+    }
+
+private:
+    QVariantAnimation timeline_;
+    QPixmap from_;
+    QPixmap to_;
+    qreal direction_ = 1.0;
+    qreal progress_ = 0.0;
+};
+
+class PageStack : public QStackedWidget {
+public:
+    explicit PageStack(QWidget *parent) : QStackedWidget(parent), flip_(new PageFlip(parent)) {}
+
+    void cancelFlip() { flip_->cancel(); }
+
+    // Include the header in the same surface. The header has different heights
+    // on the workbench and in a conversation, but the surrounding pane is stable.
+    QPixmap captureSurface() const { return parentWidget()->grab(); }
+
+    bool wantsFlip(int index) const
+    {
+        const auto *surface = parentWidget();
+        const auto dpr = surface->devicePixelRatioF();
+        const auto extent = surface->size();
+        const auto duration = style()->styleHint(QStyle::SH_Widget_Animation_Duration, nullptr, this);
+        if (currentIndex() != index)
+            qCDebug(pageMotionLog) << "eligibility" << currentIndex() << index << isVisible()
+                                   << window()->isMinimized() << extent << dpr << duration;
+        return currentIndex() != index && isVisible() && !window()->isMinimized() &&
+            extent.width() >= 240 && extent.height() >= 200 &&
+            extent.width() * qreal(extent.height()) * dpr * dpr <= 5000000 && duration > 0;
+    }
+
+    void startFlip(QPixmap from, QPixmap to, bool forward)
+    {
+        flip_->start(std::move(from), std::move(to), forward);
+    }
+
+private:
+    PageFlip *flip_;
+};
+
+QStringList localAttachmentPaths(const QMimeData *data)
+{
+    QStringList paths;
+    for (const auto &url : data->urls()) {
+        if (url.isLocalFile())
+            paths << url.toLocalFile();
+    }
+    return paths;
+}
+
+bool acceptAttachmentCopy(QDropEvent *event)
+{
+    if (!event->possibleActions().testFlag(Qt::CopyAction)) {
+        event->ignore();
+        return false;
+    }
+    event->setDropAction(Qt::CopyAction);
+    event->accept();
+    return true;
+}
+
+class ComposerFrame : public QFrame {
+public:
+    using QFrame::QFrame;
+    std::function<void(const QStringList &)> dropFiles;
+
+protected:
+    void dragEnterEvent(QDragEnterEvent *event) override { dragMoveEvent(event); }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (dropFiles && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            event->ignore();
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        const auto paths = localAttachmentPaths(event->mimeData());
+        if (!dropFiles || paths.isEmpty()) {
+            event->ignore();
+            return;
+        }
+        if (acceptAttachmentCopy(event))
+            dropFiles(paths);
+    }
+};
 
 class ComposerEdit : public QPlainTextEdit {
 public:
@@ -115,6 +293,33 @@ protected:
             focusChanged(false);
     }
 
+    void dragEnterEvent(QDragEnterEvent *event) override
+    {
+        if (attachments && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            QPlainTextEdit::dragEnterEvent(event);
+    }
+
+    void dragMoveEvent(QDragMoveEvent *event) override
+    {
+        if (attachments && !localAttachmentPaths(event->mimeData()).isEmpty())
+            acceptAttachmentCopy(event);
+        else
+            QPlainTextEdit::dragMoveEvent(event);
+    }
+
+    void dropEvent(QDropEvent *event) override
+    {
+        const auto paths = localAttachmentPaths(event->mimeData());
+        if (attachments && !paths.isEmpty()) {
+            if (acceptAttachmentCopy(event))
+                attachments(paths, {});
+        } else {
+            QPlainTextEdit::dropEvent(event);
+        }
+    }
+
     bool canInsertFromMimeData(const QMimeData *data) const override
     {
         return data->hasUrls() || data->hasImage() || QPlainTextEdit::canInsertFromMimeData(data);
@@ -122,11 +327,7 @@ protected:
 
     void insertFromMimeData(const QMimeData *data) override
     {
-        QStringList paths;
-        for (const auto &url : data->urls()) {
-            if (url.isLocalFile())
-                paths << url.toLocalFile();
-        }
+        const auto paths = localAttachmentPaths(data);
         const auto image = paths.isEmpty() ? qvariant_cast<QImage>(data->imageData()) : QImage();
         if ((!paths.isEmpty() || !image.isNull()) && attachments)
             attachments(paths, image);
@@ -344,7 +545,7 @@ Window::Window(Controller &controller)
     heading->addLayout(headingRow);
     main->addWidget(header);
 
-    pages_ = new QStackedWidget(conversation);
+    pages_ = new PageStack(conversation);
     home_ = new Workbench(controller_, pages_);
     pages_->addWidget(home_);
 
@@ -417,7 +618,9 @@ Window::Window(Controller &controller)
     queued->addWidget(runQueued_);
     workLayout->addWidget(queuedCard_);
 
-    composer_ = new QFrame(work);
+    auto *composerFrame = new ComposerFrame(work);
+    composerFrame->dropFiles = [this](const auto &paths) { appendFiles(paths, {}); };
+    composer_ = composerFrame;
     composer_->setObjectName("composerCard");
     auto *composerLayout = new QVBoxLayout(composer_);
     composerLayout->setContentsMargins(10, 9, 10, 9);
@@ -430,7 +633,7 @@ Window::Window(Controller &controller)
     auto *edit = new ComposerEdit(composer_);
     edit->setObjectName("composerEdit");
     edit->setFixedHeight(73);
-    edit->setPlaceholderText("描述你的任务…");
+    edit->setPlaceholderText("描述你的任务，或拖入文件和文件夹…");
     edit->focusChanged = [this](bool focused) {
         composer_->setProperty("focused", focused);
         composer_->style()->unpolish(composer_);
@@ -541,6 +744,14 @@ Window::Window(Controller &controller)
     viewMenu->addAction("搜索会话", QKeySequence(Qt::CTRL | Qt::Key_K), search_, qOverload<>(&QLineEdit::setFocus));
     viewMenu->addAction("切换审阅", QKeySequence(Qt::CTRL | Qt::SHIFT | Qt::Key_R), this,
                         [this] { displayReview(review_->isHidden()); });
+    auto *reduceMotion = viewMenu->addAction("减少动态效果");
+    reduceMotion->setObjectName("reduceMotion");
+    reduceMotion->setCheckable(true);
+    reduceMotion->setChecked(controller_.setting("reduceMotion") == "true");
+    connect(reduceMotion, &QAction::toggled, this, [this](bool reduced) {
+        static_cast<PageStack *>(pages_)->cancelFlip();
+        action([this, reduced] { controller_.setSetting("reduceMotion", reduced ? "true" : "false"); });
+    });
     viewMenu->addAction("设置…", QKeySequence::Preferences, this, &Window::showSettings);
     menuBar()->addMenu("扩展")->addAction("Computer Use…", this, &Window::showExtension);
 
@@ -749,12 +960,52 @@ void Window::showHome()
 
 void Window::selectThread(const QString &id)
 {
+    auto *stack = static_cast<PageStack *>(pages_);
+    const int nextPage = controller_.thread(id) ? 1 : 0;
+    constexpr qint64 extraPaintBudgetMs = 24;
+    QElapsedTimer capture;
+    QPixmap previous;
+    qint64 sourceMs = 0;
+    if (id != current_ || stack->currentIndex() != nextPage)
+        stack->cancelFlip();
+    if (stack->wantsFlip(nextPage)) {
+        if (controller_.setting("reduceMotion") == "true") {
+            qCDebug(pageMotionLog) << "reduced motion";
+        } else {
+            capture.start();
+            previous = stack->captureSurface();
+            sourceMs = capture.elapsed();
+            qCDebug(pageMotionLog) << "source grab ms" << sourceMs << previous.size();
+        }
+    }
     current_ = id;
     if (const auto *thread = controller_.thread(id))
         project_ = thread->project;
     action([this, id] { controller_.setSetting("selected", id); });
     syncThread();
     scheduleTranscript();
+    if (!capture.isValid())
+        return;
+
+    // Switching and populating the live page is required even without motion.
+    // Budget only the extra work for animation, not that unavoidable navigation.
+    const auto navigationMs = capture.restart() - sourceMs;
+    qCDebug(pageMotionLog) << "live navigation ms" << navigationMs << stack->currentIndex();
+    if (previous.isNull() || sourceMs >= extraPaintBudgetMs || stack->currentIndex() != nextPage)
+        return;
+    if (nextPage == 1 && transcript_->isVisible()) {
+        transcriptTimer_.stop();
+        renderTranscript();
+    }
+    if (sourceMs + capture.elapsed() >= extraPaintBudgetMs) {
+        qCDebug(pageMotionLog) << "animation budget exceeded before destination capture";
+        return;
+    }
+    auto next = stack->captureSurface();
+    const auto extraMs = sourceMs + capture.elapsed();
+    qCDebug(pageMotionLog) << "total extra animation preparation ms" << extraMs << next.size();
+    if (extraMs < extraPaintBudgetMs)
+        stack->startFlip(std::move(previous), std::move(next), nextPage == 1);
 }
 
 void Window::rebuildNavigation()
@@ -876,6 +1127,7 @@ void Window::syncThread()
         input_->moveCursor(QTextCursor::End);
     }
     const bool editable = !thread->archived && run.phase != Phase::Preparing;
+    composer_->setAcceptDrops(editable);
     input_->setEnabled(editable);
     add_->setEnabled(editable);
     if (displayedFiles_ != thread->draft.files || changed)
